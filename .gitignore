@@ -1,0 +1,8 @@
+Credentials/
+_notes/
+node_modules/
+dist/
+.env*
+!.env.example
+.firebase/
+*.log
