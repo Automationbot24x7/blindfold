@@ -87,7 +87,7 @@ function hoa() {
   owners.slice(0, 4).forEach((o, i) => rows.push({ day: 14 + i * 3, month: 8, narr: `INSTANT PAY FROM ${o} MEMO SUMMER PICNIC`, in: between(25, 60), truth: 'DUE' }));
   rows.push({ day: 6, month: 7, narr: 'MOBILE CHECK DEPOSIT', in: 1350, truth: 'DUE' });
   for (const m of [7, 8, 9]) {
-    rows.push({ day: 3, month: m, narr: 'ACH DEBIT SENTRY GATE SECURITY MONTHLY', out: 1800, truth: 'PUR' });
+    rows.push({ day: 3, month: m, narr: 'ACH DEBIT SENTRY GATE SECURITY MONTHLY', out: 1800, truth: 'SUP' });
     rows.push({ day: 9, month: m, narr: 'ACH DEBIT CITY POWER CO COMMON AREA', out: cents(310, 395), truth: 'UTL' });
     rows.push({ day: 15, month: m, narr: `CHECK ${2040 + m} EVERGREEN LANDSCAPING`, out: 950, truth: 'SUP', ref: String(2040 + m) });
     rows.push({ day: 21, month: m, narr: 'ACH DEBIT AQUACLEAR POOL SERVICE INV ' + (3300 + m), out: 420, truth: 'SUP' });
@@ -130,7 +130,7 @@ function rescue() {
   }
   rows.push({ day: 19, month: 8, narr: 'CARD PURCHASE 08/19 PETSUPPLY DEPOT #221', out: 1284.5, truth: 'PUR' });
   rows.push({ day: 19, month: 8, narr: 'CARD PURCHASE 08/19 PETSUPPLY DEPOT #221', out: 1284.5, truth: 'PUR' }); // planted duplicate
-  for (const [d, a, c] of [[3, 2400, 1041], [5, 2350, 1042], [8, 2450, 1043]]) rows.push({ day: d, month: 9, narr: `CHECK ${c} OAKWOOD VETERINARY CLINIC`, out: a, truth: 'PUR', ref: String(c) }); // planted split
+  for (const [d, a, c] of [[3, 2400, 1041], [5, 2350, 1042], [8, 2450, 1043]]) rows.push({ day: d, month: 9, narr: `CHECK ${c} OAKWOOD VETERINARY CLINIC`, out: a, truth: 'SUP', ref: String(c) }); // planted split
   rows.push({ day: 10, month: 7, narr: 'ACH DEBIT HOMESAFE INSURANCE PREMIUM', out: 940, truth: 'INS' });
   rows.push({ day: 14, month: 8, narr: 'INSTANT PAY TO MARK DELANEY MEMO TRANSPORT ADVANCE', out: 5000, truth: 'ADV' });
   rows.push({ day: 20, month: 8, narr: 'INSTANT PAY FROM MARK DELANEY MEMO RETURN', in: 5000, truth: 'ADV' }); // planted round trip

@@ -1,9 +1,10 @@
 // The placeholder vault. Real identifiers are swapped for consistent placeholders
 // ([PERSON_3], [UPI_2] ...) before anything can leave the device, and swapped back
 // locally when an answer returns. The vault itself never leaves the browser.
+import { isSafeToken } from './safewords';
 
 export type TokenType =
-  | 'PERSON' | 'BUSINESS' | 'NAME' | 'UPI' | 'EMAIL' | 'PHONE' | 'PAN' | 'AADHAAR' | 'SSN'
+  | 'PERSON' | 'BUSINESS' | 'NAME' | 'TEXT' | 'UPI' | 'EMAIL' | 'PHONE' | 'PAN' | 'AADHAAR' | 'SSN'
   | 'CARD' | 'ACCOUNT' | 'BRANCH' | 'REF';
 
 interface Pattern { type: TokenType; re: RegExp }
@@ -80,6 +81,25 @@ export class Vault {
       const t = this.nameWords.get(w.toLowerCase());
       if (t) { used.add(t); return t; }
       return w;
+    });
+    return { text: out, tokens: [...used] };
+  }
+
+  /**
+   * Free-text notes are default-deny: after known parties and identifier patterns are masked,
+   * every remaining word that is not an everyday purpose word (see safewords.ts) becomes a
+   * placeholder too. A first name in a note can therefore never leave, even if every model misses it.
+   */
+  maskNote(text: string, parties: { name: string; kind: 'PERSON' | 'BUSINESS' }[] = []): Masked {
+    const m = this.mask(text, parties);
+    const used = new Set(m.tokens);
+    const out = m.text.replace(/\[[A-Z]+_\d+\]|[\p{L}\p{N}][\p{L}\p{N}'’.&-]*/gu, w => {
+      if (/^\[[A-Z]+_\d+\]$/.test(w)) return w;
+      const core = w.replace(/[.'’&-]+$/, '');
+      if (isSafeToken(core)) return w;
+      const t = this.token('TEXT', core);
+      used.add(t);
+      return t + w.slice(core.length);
     });
     return { text: out, tokens: [...used] };
   }

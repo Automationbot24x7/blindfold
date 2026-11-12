@@ -17,7 +17,8 @@ export async function deviceAvailability(): Promise<DeviceStatus> {
   const lm = (globalThis as unknown as { LanguageModel?: LanguageModelApi }).LanguageModel;
   if (!lm) return 'unavailable';
   try {
-    return await lm.availability(options);
+    // Some browsers expose the API but never answer; don't leave the page "checking" forever.
+    return await Promise.race([lm.availability(options), new Promise<'unavailable'>(r => setTimeout(() => r('unavailable'), 4000))]);
   } catch {
     return 'unavailable';
   }

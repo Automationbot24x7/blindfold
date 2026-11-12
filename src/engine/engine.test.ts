@@ -67,6 +67,19 @@ describe('vault and leak guard helpers', () => {
     const v = new Vault();
     expect(v.maskExtra('fees aarav term 2', expandHits(['arav'], 'fees aarav term 2')).text).toBe('fees [NAME_1] term 2');
   });
+  it('notes are default-deny: unknown words never leave, purpose words do', () => {
+    const v = new Vault();
+    const parties = [{ name: 'MIKE TORRES', kind: 'PERSON' as const }];
+    expect(v.maskNote('for jenny piano lessons call 415-555-0143', parties).text).toBe('for [TEXT_1] piano lessons call [PHONE_1]');
+    expect(v.maskNote('fees aarav term 2').text).toBe('fees [TEXT_2] term 2');
+    expect(v.maskNote('INV 2231').text).toBe('INV 2231');
+    expect(v.maskNote('REIMB POOL CHEMICALS').text).toBe('REIMB POOL CHEMICALS');
+    expect(v.maskNote('LOT 14 Q3 DUES').text).toBe('LOT 14 Q3 DUES');
+    expect(v.maskNote('lunch with mike at Rosewood Cafe', parties).text).toBe('lunch with [PERSON_1] at [TEXT_3] [TEXT_4]');
+    // The same unknown word always gets the same placeholder, and it restores locally.
+    expect(v.maskNote('jenny again').text).toBe('[TEXT_1] again');
+    expect(v.restore('[TEXT_1]')).toBe('jenny');
+  });
 });
 
 describe('rules and detectors on the samples', () => {
@@ -74,7 +87,7 @@ describe('rules and detectors on the samples', () => {
     for (const n of SAMPLES) {
       const t = truth(n);
       load(n).txns.forEach((x, i) => {
-        const r = ruleCategory(x);
+        const r = ruleCategory(x, { receiptHead: n === 'cafe' ? 'SAL' : 'DUE' });
         if (r && r.code !== t[i]) throw new Error(`${n} row ${i + 1}: rule ${r.code} (${r.why}) but truth ${t[i]} :: ${x.narration}`);
       });
     }
@@ -82,7 +95,7 @@ describe('rules and detectors on the samples', () => {
   it('finds every planted pattern, and no split payment on a business', () => {
     const kinds = (n: string, approval?: number) => {
       const { txns, currency } = load(n);
-      txns.forEach(x => { x.category = ruleCategory(x)?.code; });
+      txns.forEach(x => { x.category = ruleCategory(x, { receiptHead: n === 'cafe' ? 'SAL' : 'DUE' })?.code; });
       return detect(txns, { ...DEFAULT_CONFIG[currency], ...(approval !== undefined ? { approvalLimit: approval } : {}) }).map(f => f.kind);
     };
     const cafe = kinds('cafe', 0);
@@ -90,5 +103,12 @@ describe('rules and detectors on the samples', () => {
     expect(cafe).not.toContain('SPLIT_PAYMENT');
     expect(kinds('hoa')).toEqual(expect.arrayContaining(['DUPLICATE_PAYMENT', 'ROUND_TRIP', 'STRUCTURING', 'SPLIT_PAYMENT']));
     expect(kinds('rescue')).toEqual(expect.arrayContaining(['DUPLICATE_PAYMENT', 'ROUND_TRIP', 'STRUCTURING', 'SPLIT_PAYMENT']));
+  });
+});
+
+describe('leak guard noise filter', () => {
+  it('ignores everyday words but keeps names, including month names', async () => {
+    const { usefulHits } = await import('./guard');
+    expect(usefulHits(['CASH', 'Cash', 'CARD', 'jenny', 'June', 'piano lessons'])).toEqual(['jenny', 'June']);
   });
 });

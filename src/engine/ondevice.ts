@@ -4,7 +4,7 @@
 import { CATEGORIES, codesFor } from './categories';
 import { money, type Currency } from './detectors';
 import { deviceModel } from '../lib/firebase';
-import { expandHits } from './guard';
+import { expandHits, usefulHits } from './guard';
 import type { Direction, Txn } from './types';
 
 export interface PayeeGroup {
@@ -28,6 +28,9 @@ const examples: Record<Direction, string> = {
     'Example: OUT $1,500.00 | ALAN PRICE (person) | note: studio rent => RNT',
     'Example: OUT $950.00 | LITTLE STARS ACADEMY (business) | note: none => DRW',
     'Example: OUT $300.00 | KESSLER TAX ADVISORS (business) | note: return filing => FEE',
+    'Example: OUT $640.00 | EVERGLADE LAWN CARE (business) | note: monthly service => SUP',
+    'Example: OUT $36.50 | CITYLINE TAXI (business) | note: none => TRV',
+    'Example: OUT $180.00 | SERENITY NAIL SPA (business) | note: none => DRW',
   ].join('\n'),
   in: [
     'Example: IN $1,164.20 | SWIFTPAY SETTLEMENT (business) | note: none => SAL',
@@ -105,6 +108,6 @@ export async function leakGuard(maskedText: string): Promise<{ hits: string[]; c
   const res = await model.generateContent(prompt);
   const ms = performance.now() - t0;
   const leaks = (JSON.parse(res.response.text()) as { leaks: string[] }).leaks ?? [];
-  return { hits: expandHits(leaks, maskedText), call: { purpose: 'Leak guard: re-read outgoing text', rows: 0, ms, source: res.response.inferenceSource ?? 'unknown' } };
+  return { hits: usefulHits(expandHits(leaks, maskedText)), call: { purpose: 'Leak guard: re-read outgoing text', rows: 0, ms, source: res.response.inferenceSource ?? 'unknown' } };
 }
 

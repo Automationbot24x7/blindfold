@@ -19,19 +19,23 @@ const partiesOf = (rows: Txn[]) =>
 
 /** One masked line per row: only the fields the review needs (data minimisation). */
 export function maskedLine(t: Txn, vault: Vault, currency: Currency, parties = partiesOf([t])): string {
-  const who = t.counterparty ? vault.mask(t.counterparty, parties).text : 'none';
-  const kind = t.counterpartyKind === 'NONE' ? '' : ` (${t.counterpartyKind.toLowerCase()})`;
-  const note = t.note ? vault.mask(t.note, parties).text : '';
-  return `${t.date} ${t.direction === 'out' ? 'OUT' : 'IN'} ${money(t.amount, currency)} via ${t.rail} ${who}${kind}` +
-    `${note ? ` note: "${note}"` : ''}${t.category ? ` head: ${label(t.category)}` : ''}`;
+  const who = t.counterparty ? vault.mask(t.counterparty, parties).text : '';
+  const kind = t.counterpartyKind === 'NONE' ? '' : `(${t.counterpartyKind.toLowerCase()})`;
+  const note = t.note ? vault.maskNote(t.note, parties).text : ''; // default-deny: only everyday purpose words survive
+  return [
+    t.date, t.direction === 'out' ? 'OUT' : 'IN', money(t.amount, currency), `via ${t.rail}`,
+    who && `${who} ${kind}`, note && `note: "${note}"`, t.category && `head: ${label(t.category)}`,
+  ].filter(Boolean).join(' ');
 }
 
 const REVIEW_INSTRUCTIONS =
   'You are a careful audit reviewer helping a small bookkeeping practice. Deterministic code found the pattern below in a ' +
-  "client's bank statement. Real names and identifiers were replaced with placeholders such as [PERSON_3] or [BUSINESS_2]: " +
+  "client's bank statement. Real names and identifiers were replaced with placeholders in square brackets (a word, an underscore and a number, like PERSON_1): " +
   'keep every placeholder exactly as written and never guess who it is. Use only the facts given; do not calculate new numbers. ' +
-  'Decide whether this is LIKELY_ISSUE, NEEDS_EXPLANATION or LIKELY_FINE. Write a two-sentence explanation a bookkeeper can paste ' +
-  'into a client note, and one short, polite question to ask the client.';
+  'Decide whether this is LIKELY_ISSUE, NEEDS_EXPLANATION or LIKELY_FINE. Then write two plain sentences, the way an experienced ' +
+  'bookkeeper would say it to a client: what happened and why it matters (for example a refund to chase, a cash-reporting risk, ' +
+  'a loan that needs paperwork). Avoid stiff phrases such as "a transaction occurred" or "requires proper documentation", and do not ' +
+  'repeat the field names. Finally write one short, friendly question to ask the client.';
 
 export function findingPayload(f: Finding, rows: Txn[], vault: Vault, currency: Currency, context: string): OutgoingPayload {
   const parties = partiesOf(rows);

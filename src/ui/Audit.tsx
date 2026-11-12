@@ -1,6 +1,6 @@
 import {
   AlertTriangle, ArrowRight, Check, CircleDashed, Cloud, Cpu, Download, Eye, FileDown, FileUp, Flag, Loader2,
-  Lock, Printer, ScanSearch, ShieldCheck, Sparkles, Upload,
+  History, Lock, Play, Printer, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Upload,
 } from 'lucide-react';
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { CATEGORIES, codesFor, label } from '../engine/categories';
@@ -10,9 +10,10 @@ import { Audit, type AuditSnapshot, type LedgerEntry, type Stage } from '../engi
 import type { Finding, Txn } from '../engine/types';
 import { prepareDevice, useDevice } from '../lib/device';
 import { appConfig, loadConfig } from '../lib/remoteConfig';
+import { buildFrames, type RecordedRun } from './replay';
 import { SAMPLES, type Sample } from './samples';
 
-interface Meta { title: string; context: string; currency: Currency; period?: string; sample?: Sample['id']; approvalRule: boolean }
+interface Meta { title: string; context: string; currency: Currency; period?: string; sample?: string; approvalRule: boolean }
 
 const CONTEXTS: { label: string; context: string; approvalRule: boolean }[] = [
   { label: 'A small shop, café or trading business', context: 'a small independent shop or trading business', approvalRule: false },
@@ -31,10 +32,21 @@ export function AuditPage() {
   const [cloudOnlyOk, setCloudOnlyOk] = useState(false);
   const [error, setError] = useState('');
   const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
+  const [replay, setReplay] = useState<{ recordedAt: string; machine: string; vaultSize: number } | null>(null);
   const auditRef = useRef<Audit | null>(null);
+  const timers = useRef<number[]>([]);
 
   const deviceReady = device.status === 'available';
   const canRun = deviceReady || cloudOnlyOk;
+
+  function reset() {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    auditRef.current = null;
+    setReplay(null);
+    setSnap(null);
+    setMeta(null);
+  }
 
   async function start(csv: string, m: Meta) {
     setError('');
@@ -45,13 +57,22 @@ export function AuditPage() {
       const config = { ...cfg.audit[currency], approvalLimit: m.approvalRule ? cfg.audit[currency].approvalLimit : 0 };
       const audit = new Audit(imported.txns, {
         currency, context: m.context, config, cloudModel: cfg.cloudModel,
-        deviceBatchSize: cfg.deviceBatchSize, deviceAvailable: deviceReady, onUpdate: setSnap,
+        deviceBatchSize: cfg.deviceBatchSize, deviceAvailable: deviceReady, receiptHead: m.approvalRule ? 'DUE' : 'SAL', onUpdate: setSnap,
       });
       auditRef.current = audit;
+      setReplay(null);
       setMeta({ ...m, currency });
       setSnap(audit.snapshot);
       setTab('findings');
-      void audit.run();
+      await audit.run();
+      // Development only: save this real run so browsers without the on-device model can replay it.
+      if (import.meta.env.DEV && location.search.includes('record') && m.sample && audit.snapshot.stage === 'done' && deviceReady) {
+        const run: RecordedRun = {
+          version: 1, recordedAt: new Date().toISOString(), machine: 'a Windows laptop running desktop Chrome with the on-device model',
+          meta: { ...m, currency }, vaultSize: audit.vault.size, snapshot: audit.snapshot,
+        };
+        await fetch('/__save-run', { method: 'POST', body: JSON.stringify(run) });
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -60,6 +81,23 @@ export function AuditPage() {
   async function runSample(s: Sample) {
     const csv = await (await fetch(`samples/${s.id}.csv`)).text();
     void start(csv, { title: s.title, context: s.context, currency: 'USD', period: s.period, sample: s.id, approvalRule: s.approvalRule });
+  }
+
+  async function playRecorded(s: Sample) {
+    setError('');
+    try {
+      const run = (await (await fetch(`recorded/${s.id}.json`)).json()) as RecordedRun;
+      const frames = buildFrames(run.snapshot);
+      auditRef.current = null;
+      setReplay({ recordedAt: run.recordedAt, machine: run.machine, vaultSize: run.vaultSize });
+      setMeta(run.meta);
+      setTab('findings');
+      setSnap(frames[0].snap);
+      let at = 0;
+      timers.current = frames.slice(1).map(fr => { at += fr.delay; return window.setTimeout(() => setSnap(fr.snap), at); });
+    } catch {
+      setError('That recorded run could not be loaded.');
+    }
   }
 
   if (!snap || !meta) {
@@ -72,15 +110,21 @@ export function AuditPage() {
           </div>
         </div>
         <DeviceNotice deviceStatus={device.status} progress={device.progress} cloudOnlyOk={cloudOnlyOk} setCloudOnlyOk={setCloudOnlyOk} />
-        {error && <div className="notice warn"><AlertTriangle /><div><h4>Could not read that file</h4><p>{error}</p></div></div>}
+        {error && <div className="notice warn"><AlertTriangle /><div><h4>Something went wrong</h4><p>{error}</p></div></div>}
         <div className="samples">
           {SAMPLES.map(s => (
-            <button key={s.id} className="sample" disabled={!canRun} onClick={() => void runSample(s)}>
+            <div key={s.id} className="sample">
               <span className="flag">{s.place}</span>
               <h3>{s.title}</h3>
               <p>{s.blurb}</p>
               <span className="meta"><span className="pill">{s.period}</span><span className="pill">Synthetic sample</span></span>
-            </button>
+              <div className="sample-actions">
+                <button className="btn primary sm" disabled={!canRun} onClick={() => void runSample(s)} title={canRun ? '' : 'Needs the on-device model, or cloud-only mode'}>
+                  <Play />Run on this computer
+                </button>
+                <button className="btn sm" onClick={() => void playRecorded(s)}><History />Watch a recorded run</button>
+              </div>
+            </div>
           ))}
         </div>
         <DropZone disabled={!canRun} onFile={(name, text) => setPendingFile({ name, text })} />
@@ -93,23 +137,34 @@ export function AuditPage() {
         )}
         <p className="muted" style={{ fontSize: 13, marginTop: 18 }}>
           Every person and business in the samples is made up. Your own file never leaves this browser: only masked lines are sent for review, and each one is listed in the privacy receipt.
+          Recorded runs replay real audits made on a laptop with the on-device model, for browsers that do not have it.
         </p>
       </div>
     );
   }
 
   const flagged = new Set(snap.findings.flatMap(f => f.txnIds));
+  const vaultSize = replay?.vaultSize ?? auditRef.current?.vault.size ?? 0;
   return (
     <div className="app">
-      <Rail snap={snap} vaultSize={auditRef.current?.vault.size ?? 0} currency={meta.currency} />
+      <Rail snap={snap} currency={meta.currency} />
       <div className="main">
+        {replay && (
+          <div className="notice replay no-print">
+            <History />
+            <div>
+              <h4>You are watching a recorded run</h4>
+              <p>This audit ran for real on {new Date(replay.recordedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })} on {replay.machine}. Nothing is being processed or sent right now; timings and the privacy receipt are from that run.</p>
+            </div>
+          </div>
+        )}
         <div className="page-head">
           <div>
             <h1>{meta.title}</h1>
             <p>{meta.period ? `${meta.period} · ` : ''}{snap.txns.length} rows · {snap.message}</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }} className="no-print">
-            <button className="btn" onClick={() => { setSnap(null); setMeta(null); }}><Upload />New statement</button>
+            <button className="btn" onClick={reset}><Upload />New statement</button>
           </div>
         </div>
         {snap.error && <div className="notice warn"><AlertTriangle /><div><h4>The audit stopped</h4><p>{snap.error}</p></div></div>}
@@ -118,12 +173,17 @@ export function AuditPage() {
           <button className={tab === 'ledger' ? 'on' : ''} onClick={() => setTab('ledger')}><ScanSearch size={15} />Ledger<span className="count">{snap.txns.length}</span></button>
           <button className={tab === 'receipt' ? 'on' : ''} onClick={() => setTab('receipt')}><ShieldCheck size={15} />Privacy receipt<span className="count">{snap.ledger.length}</span></button>
         </div>
-        {tab === 'findings' && <FindingsView snap={snap} currency={meta.currency} onXray={setXray} />}
+        {tab === 'findings' && (
+          <FindingsView
+            snap={snap} currency={meta.currency} onXray={setXray}
+            onRetry={!replay && auditRef.current ? id => void auditRef.current?.retryReview(id) : undefined}
+          />
+        )}
         {tab === 'ledger' && <LedgerView snap={snap} currency={meta.currency} flagged={flagged} onEdit={(id, code) => {
           const t = snap.txns.find(x => x.id === id);
           if (t) { t.category = code; t.categorySource = 'user'; t.categoryReason = 'set by you'; setSnap({ ...snap, txns: [...snap.txns] }); }
         }} />}
-        {tab === 'receipt' && <ReceiptView snap={snap} meta={meta} vaultSize={auditRef.current?.vault.size ?? 0} />}
+        {tab === 'receipt' && <ReceiptView snap={snap} meta={meta} vaultSize={vaultSize} recorded={!!replay} />}
       </div>
       {xray && <XRay finding={xray} snap={snap} currency={meta.currency} onClose={() => setXray(null)} />}
     </div>
@@ -211,12 +271,13 @@ const STAGES: { id: Stage; label: string; hint: string }[] = [
   { id: 'done', label: 'Report ready', hint: 'names restored locally' },
 ];
 
-function Rail({ snap, vaultSize, currency }: { snap: AuditSnapshot; vaultSize: number; currency: Currency }) {
+function Rail({ snap, currency }: { snap: AuditSnapshot; currency: Currency }) {
   const order = STAGES.map(s => s.id);
   const cur = order.indexOf(snap.stage === 'error' ? 'done' : snap.stage);
   const n = snap.txns.length;
   const by = (s: string) => snap.txns.filter(t => t.categorySource === s).length;
   const sentLines = snap.ledger.filter(l => l.status === 'sent').reduce((s, l) => s + (l.text.match(/^(- |r\d+: )/gm) ?? []).length, 0);
+  const tokens = sentTokens(snap);
   const cloudCalls = snap.ledger.filter(l => l.status === 'sent' && l.source === 'in_cloud').length;
   const deviceMs = snap.deviceCalls.reduce((s, c) => s + c.ms, 0);
   return (
@@ -253,7 +314,7 @@ function Rail({ snap, vaultSize, currency }: { snap: AuditSnapshot; vaultSize: n
       <div className="stat-grid">
         <div className="stat zero"><b>0</b><span>raw names or IDs</span></div>
         <div className="stat"><b>{sentLines}</b><span>masked lines</span></div>
-        <div className="stat"><b>{vaultSize}</b><span>identifiers masked</span></div>
+        <div className="stat"><b>{tokens.all}</b><span>placeholders sent</span></div>
         <div className="stat"><b>{snap.guardCatches.length}</b><span>leak-guard catches</span></div>
       </div>
       <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
@@ -271,7 +332,7 @@ const KIND: Record<string, string> = {
 };
 const VERDICT: Record<string, string> = { LIKELY_ISSUE: 'Likely issue', NEEDS_EXPLANATION: 'Ask the client', LIKELY_FINE: 'Probably fine' };
 
-function FindingsView({ snap, currency, onXray }: { snap: AuditSnapshot; currency: Currency; onXray: (f: Finding) => void }) {
+function FindingsView({ snap, currency, onXray, onRetry }: { snap: AuditSnapshot; currency: Currency; onXray: (f: Finding) => void; onRetry?: (id: string) => void }) {
   if (!snap.findings.length) {
     return <div className="notice"><Loader2 className={snap.stage === 'done' ? '' : 'spin'} /><div><h4>{snap.stage === 'done' ? 'No patterns found' : 'Working…'}</h4><p>{snap.stage === 'done' ? 'Nothing in this statement matched a duplicate, round trip, threshold or split pattern.' : 'Findings appear here as soon as code has computed them.'}</p></div></div>;
   }
@@ -301,9 +362,12 @@ function FindingsView({ snap, currency, onXray }: { snap: AuditSnapshot; currenc
             <div className="foot">
               {f.review && (f.review.source === 'in_cloud'
                 ? <span className="src cloud"><Cloud />Reviewed in the cloud, blind · {(f.review.ms / 1000).toFixed(1)} s</span>
-                : <span className="src device"><Cpu />On-device draft (cloud unavailable)</span>)}
+                : <span className="src device" title={f.review.model}><Cpu />On-device draft{f.review.model?.includes('(') ? ` · ${f.review.model.split('(')[1].replace(')', '')}` : ''}</span>)}
               <span className="src rule"><Sparkles />Numbers computed by code</span>
               {f.sentText && <button className="btn sm" onClick={() => onXray(f)}><Eye />See what the cloud saw</button>}
+              {onRetry && f.review?.source === 'on_device' && f.reviewStatus !== 'pending' && (
+                <button className="btn sm" onClick={() => onRetry(f.id)}><RefreshCw />Ask the cloud again</button>
+              )}
             </div>
           </article>
         );
@@ -420,29 +484,30 @@ function LedgerView({ snap, currency, flagged, onEdit }: { snap: AuditSnapshot; 
 
 /* ------------------------------------------------------------------ receipt */
 
-function ReceiptView({ snap, meta, vaultSize }: { snap: AuditSnapshot; meta: Meta; vaultSize: number }) {
+function ReceiptView({ snap, meta, vaultSize, recorded }: { snap: AuditSnapshot; meta: Meta; vaultSize: number; recorded?: boolean }) {
   const sent = snap.ledger.filter(l => l.status === 'sent');
+  const tokens = sentTokens(snap);
   const summary = useMemo(() => ({
-    statement: meta.title, generated: new Date().toISOString(), rows: snap.txns.length,
+    statement: meta.title, generated: new Date().toISOString(), recordedRunReplay: !!recorded, rows: snap.txns.length,
     rowsReadOnDevice: snap.txns.filter(t => t.categorySource === 'device' || t.categorySource === 'memory').length,
     rowsByRules: snap.txns.filter(t => t.categorySource === 'rule').length,
     requestsSent: sent.length, rawIdentifiersSent: 0, identifiersMasked: vaultSize, leakGuardCatches: snap.guardCatches.length,
     requests: snap.ledger.map(l => ({ time: l.at, purpose: l.purpose, status: l.status, ranOn: l.source, model: l.model, placeholders: l.placeholders, text: l.text })),
-  }), [snap, meta, vaultSize, sent.length]);
+  }), [snap, meta, vaultSize, sent.length, recorded]);
   return (
     <>
       <div className="receipt-summary">
         <div className="stat zero"><b>0</b><span>raw names, IDs or account numbers sent</span></div>
         <div className="stat"><b>{sent.length}</b><span>requests left this device</span></div>
-        <div className="stat"><b>{vaultSize}</b><span>identifiers replaced by placeholders</span></div>
-        <div className="stat"><b>{snap.guardCatches.length}</b><span>extra names caught by the leak guard</span></div>
+        <div className="stat"><b>{tokens.all}</b><span>placeholders standing in for names and IDs</span></div>
+        <div className="stat"><b>{tokens.text + snap.guardCatches.length}</b><span>unknown note words masked by default</span></div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }} className="no-print">
         <button className="btn sm" onClick={() => window.print()}><Printer />Print or save as PDF</button>
         <button className="btn sm" onClick={() => download('privacy-receipt.json', JSON.stringify(summary, null, 2), 'application/json')}><FileDown />Download receipt (JSON)</button>
       </div>
       <p className="muted" style={{ marginTop: 0 }}>
-        Every request that left this device during the audit of <b>{meta.title}</b>, with its exact text. Placeholders stand in for people, businesses, phone numbers, UPI IDs, account and reference numbers. The table that maps placeholders back to names never left this browser.
+        {recorded ? 'Recorded run: these are the requests that left the recording laptop' : 'Every request that left this device'} during the audit of <b>{meta.title}</b>, with its exact text. Placeholders stand in for people, businesses, phone numbers, payment IDs, account and reference numbers. The table that maps placeholders back to names never left the browser.
       </p>
       {snap.guardCatches.length > 0 && (
         <div className="notice device"><ShieldCheck /><div><h4>The on-device leak guard caught {snap.guardCatches.length} thing{snap.guardCatches.length === 1 ? '' : 's'} the rules missed</h4><p>{snap.guardCatches.map(g => `“${g.text}”`).join(', ')} were masked before anything was sent.</p></div></div>
@@ -463,6 +528,13 @@ function ReceiptView({ snap, meta, vaultSize }: { snap: AuditSnapshot; meta: Met
       {!snap.ledger.length && <p className="muted">Nothing has left this device yet.</p>}
     </>
   );
+}
+
+/** Distinct placeholders that appear in what actually left the device. */
+function sentTokens(snap: AuditSnapshot): { all: number; text: number } {
+  const lines = snap.ledger.filter(l => l.status === 'sent').flatMap(l => l.text.split('\n').filter(x => /^(- |r\d+: )/.test(x)));
+  const set = new Set(lines.flatMap(x => x.match(/\[[A-Z]+_\d+\]/g) ?? []));
+  return { all: set.size, text: [...set].filter(t => t.startsWith('[TEXT_') || t.startsWith('[NAME_')).length };
 }
 
 function download(name: string, text: string, type: string) {

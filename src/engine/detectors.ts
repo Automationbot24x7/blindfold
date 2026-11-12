@@ -95,7 +95,7 @@ export function detect(txns: Txn[], cfg: AuditConfig): Finding[] {
         title: same
           ? `${m(a.amount)} sent to ${a.counterparty} came back ${gap} day${gap === 1 ? '' : 's'} later`
           : `${m(a.amount)} sent to ${a.counterparty} came back from ${b.counterparty} ${gap} days later`,
-        facts: { amountOut: m(a.amount), amountBack: m(b.amount), daysApart: gap, relation: same ? 'same party' : 'parties share a name' },
+        facts: { amountOut: m(a.amount), amountBack: m(b.amount), daysApart: gap, whoSentItBack: same ? 'the same party' : 'a different party whose name contains the same surname or brand word' },
         txnIds: [a.id, b.id],
       });
     }

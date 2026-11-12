@@ -32,6 +32,7 @@ export interface AuditSnapshot {
   guardCatches: { text: string; token: string }[];
   message: string;
   deviceMode: 'on-device' | 'cloud-only';
+  maskStats?: Record<string, number>; // placeholders created, by type (PERSON, TEXT, PHONE ...)
   error?: string;
 }
 
@@ -42,6 +43,7 @@ export interface AuditOptions {
   cloudModel: string;
   deviceBatchSize: number;
   deviceAvailable: boolean;
+  receiptHead: 'SAL' | 'DUE'; // sales for a business, dues for an association or nonprofit
   onUpdate: (s: AuditSnapshot) => void;
 }
 
@@ -74,8 +76,13 @@ export class Audit {
       // 1. Rules: obvious rows never touch a model.
       this.emit({ stage: 'rules', message: 'Applying deterministic rules' });
       for (const t of this.s.txns) {
-        const r = ruleCategory(t);
+        const r = ruleCategory(t, { receiptHead: this.o.receiptHead });
         if (r) this.setTxn(t.id, { category: r.code, categorySource: 'rule', categoryReason: r.why });
+      }
+      // Money that goes out and comes back from the same (or a related) party is an advance or
+      // loan, whatever the memo says: code pairs the two legs before any model reads them.
+      for (const f of detect(this.s.txns, this.o.config).filter(x => x.kind === 'ROUND_TRIP')) {
+        for (const id of f.txnIds) this.setTxn(id, { category: 'ADV', categorySource: 'rule', categoryReason: 'paired: the same amount went out and came back' });
       }
       // Register every named party in the vault up front so masking is consistent everywhere.
       for (const t of this.s.txns) {
@@ -156,25 +163,34 @@ export class Audit {
       findings.forEach(f => { f.reviewStatus = 'pending'; });
       this.emit({ findings: [...findings] });
       const queue = [...findings];
-      const worker = async () => {
-        for (let f = queue.shift(); f; f = queue.shift()) {
-          const rows = f.txnIds.map(id => this.s.txns.find(t => t.id === id)!);
-          const payload = findingPayload(f, rows, this.vault, this.o.currency, this.o.context);
-          const target = f;
-          const status = await this.send(payload, async p => {
-            target.sentText = p.text;
-            target.review = await reviewFinding(p, this.o.cloudModel, this.vault);
-            return { source: target.review.source, ms: target.review.ms, model: target.review.model };
-          });
-          target.reviewStatus = status === 'sent' ? 'done' : status;
-          this.emit({ findings: [...findings] });
-        }
-      };
+      const worker = async () => { for (let f = queue.shift(); f; f = queue.shift()) await this.reviewOne(f); };
       await Promise.all([worker(), worker(), worker()]);
-      this.emit({ stage: 'done', message: 'Audit complete' });
+      this.emit({ stage: 'done', message: 'Audit complete', maskStats: this.vault.counts() });
     } catch (e) {
       this.emit({ stage: 'error', error: (e as Error).message, message: 'Stopped' });
     }
+  }
+
+  private async reviewOne(f: Finding): Promise<void> {
+    const rows = f.txnIds.map(id => this.s.txns.find(t => t.id === id)!);
+    const payload = findingPayload(f, rows, this.vault, this.o.currency, this.o.context);
+    const status = await this.send(payload, async p => {
+      f.sentText = p.text;
+      f.review = await reviewFinding(p, this.o.cloudModel, this.vault);
+      return { source: f.review.source, ms: f.review.ms, model: f.review.model };
+    });
+    f.reviewStatus = status === 'sent' ? 'done' : status;
+    this.emit({ findings: [...this.s.findings] });
+  }
+
+  /** Re-send an on-device draft to the cloud (for example after the laptop is back online). */
+  async retryReview(id: string): Promise<void> {
+    const f = this.s.findings.find(x => x.id === id);
+    if (!f) return;
+    f.reviewStatus = 'pending';
+    this.emit({ findings: [...this.s.findings], message: `Asking the cloud again: ${f.title}` });
+    await this.reviewOne(f);
+    this.emit({ message: 'Audit complete' });
   }
 
   /**
@@ -189,7 +205,9 @@ export class Audit {
     const base = { id, at: new Date().toLocaleTimeString(), purpose: payload.purpose, guardCaught: this.s.guardCatches.map(g => g.text) };
     let p = payload;
     if (residualIdentifiers(p.text).length) p = { ...p, text: this.vault.mask(p.text).text };
-    const placeholders = (p.text.match(/\[[A-Z]+_\d+\]/g) ?? []).length;
+    // Count distinct placeholders in the data lines only (the fixed instructions contain none).
+    const dataLines = p.text.split('\n').filter(x => /^(- |r\d+: )/.test(x)).join('\n');
+    const placeholders = new Set(dataLines.match(/\[[A-Z]+_\d+\]/g) ?? []).size;
     if (residualIdentifiers(p.text).length) {
       this.emit({ ledger: [...this.s.ledger, { ...base, text: p.text, placeholders, status: 'blocked', error: 'identifier still visible' }] });
       return 'blocked';
