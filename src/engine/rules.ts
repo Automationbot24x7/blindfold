@@ -27,7 +27,7 @@ const RULES: Rule[] = [
   { code: 'UTL', why: 'utility keyword', test: (t, s) => t.direction === 'out' && /\b(ELECTRICITY|ELECTRIC|POWER BOARD|POWER CO|WATER BOARD|WATER DEPT|BROADBAND|INTERNET|FIBER|WIRELESS|POSTPAID|PREPAID|MOBILE RECHARGE|GAS BILL|GAS CO|UTIL)\b/.test(s) },
   { code: o => o.receiptHead, why: 'cheque paid in', test: t => t.direction === 'in' && (t.rail === 'CHECK' || t.rail === 'CHEQUE') && !t.counterparty },
   // In an association or nonprofit, money paid in by individuals is members' dues or donations.
-  { code: 'DUE', why: 'member or donor payment', test: (t, s, o) => o.receiptHead === 'DUE' && t.direction === 'in' && t.counterpartyKind === 'PERSON' && !/\b(RETURN|RETURNED|REPAID|REPAYMENT|REFUND|LOAN)\b/.test(s) },
+  { code: 'DUE', why: 'member or donor payment', test: (t, s, o) => o.receiptHead === 'DUE' && t.direction === 'in' && t.counterpartyKind === 'PERSON' && !/\b(RETURN|RETURNED|REPAID|REPAYMENT|REFUND|LOAN|PAID BACK|PAY BACK|PAYBACK|REIMBURSED?|REIMBURSEMENT)\b/.test(s) },
 ];
 
 export function ruleCategory(t: Txn, o: RuleOptions = { receiptHead: 'SAL' }): { code: string; why: string } | undefined {

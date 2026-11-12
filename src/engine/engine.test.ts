@@ -104,6 +104,20 @@ describe('rules and detectors on the samples', () => {
     expect(kinds('hoa')).toEqual(expect.arrayContaining(['DUPLICATE_PAYMENT', 'ROUND_TRIP', 'STRUCTURING', 'SPLIT_PAYMENT']));
     expect(kinds('rescue')).toEqual(expect.arrayContaining(['DUPLICATE_PAYMENT', 'ROUND_TRIP', 'STRUCTURING', 'SPLIT_PAYMENT']));
   });
+  it('links a round trip by surname or brand, not by a shared industry word', () => {
+    const roundTrips = (lines: string[]) => {
+      const { txns, currency } = importStatement(['Date,Description,Withdrawals,Deposits', ...lines].join('\n'));
+      return detect(txns, DEFAULT_CONFIG[currency]).filter(f => f.kind === 'ROUND_TRIP').length;
+    };
+    // A held-out statement exposed this: two unrelated dental businesses, similar amounts.
+    expect(roundTrips(['08/25/2026,ACH DEBIT PEARLCREST DENTAL SUPPLY INV 4478,1980.00,', '08/29/2026,ACH CREDIT BAYVIEW DENTAL BENEFITS CLAIMS PMT,,1990.60'])).toBe(0);
+    expect(roundTrips(['10/12/2026,INSTANT PAY TO DANIEL REYES MEMO ADVANCE,7500.00,', '10/15/2026,WIRE IN FROM REYES CONSTRUCTION LLC MEMO RETURN,,7500.00'])).toBe(1);
+    expect(roundTrips(['10/14/2026,ACH DEBIT ACME HOLDINGS LOAN,4000.00,', '10/18/2026,ACH CREDIT ACME TRADING REPAYMENT,,4000.00'])).toBe(1);
+  });
+  it('treats "paid back" from a person as a repayment, not dues', () => {
+    const { txns } = importStatement('Date,Description,Withdrawals,Deposits\n08/20/2026,INSTANT PAY FROM TOM BECKETT MEMO PAID BACK,,3000.00');
+    expect(ruleCategory(txns[0], { receiptHead: 'DUE' })?.code).not.toBe('DUE');
+  });
 });
 
 describe('leak guard noise filter', () => {

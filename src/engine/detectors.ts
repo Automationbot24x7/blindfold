@@ -47,6 +47,20 @@ export function money(n: number, currency: Currency): string {
 const GENERIC = new Set(['TRADERS', 'ENTERPRISES', 'ENTERPRISE', 'STORE', 'STORES', 'SERVICES', 'AGENCY', 'AGENCIES', 'INDIA', 'SOLUTIONS', 'COMPANY', 'GROUP', 'FOODS', 'SUPPLY', 'SUPPLIES', 'BANK', 'CAPITAL', 'FINANCE', 'MART', 'SHOP', 'THE', 'AND', 'INDUSTRIES']);
 const distinctive = (key: string) => key.split(' ').filter(w => w.length >= 4 && !GENERIC.has(w));
 
+/**
+ * Two different parties count as related when one's identity word appears in the other's name:
+ * a person's surname (DANIEL REYES and REYES CONSTRUCTION LLC) or a business's brand, its first
+ * distinctive word (ACME HOLDINGS and ACME TRADING). An industry word that both names happen to
+ * contain (PEARLCREST DENTAL SUPPLY and BAYVIEW DENTAL BENEFITS) is not enough.
+ */
+function related(a: Txn, b: Txn): boolean {
+  const wa = distinctive(a.counterpartyKey), wb = distinctive(b.counterpartyKey);
+  const identity = (t: Txn, w: string[]) => (t.counterpartyKind === 'PERSON' ? w[w.length - 1] : w[0]);
+  const ia = wa.length ? identity(a, wa) : undefined;
+  const ib = wb.length ? identity(b, wb) : undefined;
+  return (!!ia && wb.includes(ia)) || (!!ib && wa.includes(ib));
+}
+
 let seq = 0;
 const fid = (k: string) => `${k}-${++seq}`;
 
@@ -88,7 +102,7 @@ export function detect(txns: Txn[], cfg: AuditConfig): Finding[] {
       if (Date.parse(b.date) < Date.parse(a.date) || gap > cfg.roundTripWindowDays) continue;
       if (Math.abs(a.amount - b.amount) / a.amount * 100 > cfg.roundTripTolerancePct) continue;
       const same = a.counterpartyKey === b.counterpartyKey;
-      const shared = !same && distinctive(a.counterpartyKey).some(w => distinctive(b.counterpartyKey).includes(w));
+      const shared = !same && related(a, b);
       if (!same && !shared) continue;
       findings.push({
         id: fid('rt'), kind: 'ROUND_TRIP', severity: a.amount >= cfg.cashThreshold ? 'high' : 'medium',
