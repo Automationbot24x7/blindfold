@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "hybrid-ledger-15267"
+  },
+  "targets": {
+    "hybrid-ledger-15267": {
+      "hosting": {
+        "blindfold": [
+          "blindfold-audit"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

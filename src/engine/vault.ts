@@ -4,7 +4,7 @@
 import { isSafeToken } from './safewords';
 
 export type TokenType =
-  | 'PERSON' | 'BUSINESS' | 'NAME' | 'TEXT' | 'UPI' | 'EMAIL' | 'PHONE' | 'PAN' | 'AADHAAR' | 'SSN'
+  | 'PERSON' | 'BUSINESS' | 'NAME' | 'WORD' | 'UPI' | 'EMAIL' | 'PHONE' | 'PAN' | 'AADHAAR' | 'SSN'
   | 'CARD' | 'ACCOUNT' | 'BRANCH' | 'REF';
 
 interface Pattern { type: TokenType; re: RegExp }
@@ -97,7 +97,7 @@ export class Vault {
       if (/^\[[A-Z]+_\d+\]$/.test(w)) return w;
       const core = w.replace(/[.'’&-]+$/, '');
       if (isSafeToken(core)) return w;
-      const t = this.token('TEXT', core);
+      const t = this.token('WORD', core);
       used.add(t);
       return t + w.slice(core.length);
     });

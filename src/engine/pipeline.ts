@@ -32,7 +32,7 @@ export interface AuditSnapshot {
   guardCatches: { text: string; token: string }[];
   message: string;
   deviceMode: 'on-device' | 'cloud-only';
-  maskStats?: Record<string, number>; // placeholders created, by type (PERSON, TEXT, PHONE ...)
+  maskStats?: Record<string, number>; // placeholders created, by type (PERSON, WORD, PHONE ...)
   error?: string;
 }
 

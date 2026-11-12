@@ -62,14 +62,14 @@ await go(`${BASE}/#/audit`, 2000);
 await shot('03-audit-start');
 
 // Replay the café recording and capture each view.
-await click(`[...document.querySelectorAll('.sample')][0].querySelectorAll('.btn')[1]`);
+await click(`[...document.querySelectorAll('.sample')][0].querySelector('.btn') && [...document.querySelectorAll('.sample')[0].querySelectorAll('.btn')].find(b => /recorded/.test(b.innerText))`);
 await sleep(3500);
 await shot('04-replay-in-progress');
 for (let i = 0; i < 40; i++) { if ((await evaluate(`document.querySelector('.page-head p')?.innerText || ''`)).includes('complete')) break; await sleep(500); }
 await evaluate('window.scrollTo(0,0)');
 await shot('05-findings');
 await shot('06-findings-full', { full: true });
-await click(`[...document.querySelectorAll('.finding')].find(f => /came back/.test(f.innerText))?.querySelector('.foot .btn')`);
+await click(`[...document.querySelectorAll('.finding')].find(f => /twice/.test(f.innerText))?.querySelector('footer .btn.strong')`);
 await sleep(800);
 await shot('07-xray');
 await click(`document.querySelector('.modal-head .btn')`);

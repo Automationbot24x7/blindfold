@@ -70,15 +70,15 @@ describe('vault and leak guard helpers', () => {
   it('notes are default-deny: unknown words never leave, purpose words do', () => {
     const v = new Vault();
     const parties = [{ name: 'MIKE TORRES', kind: 'PERSON' as const }];
-    expect(v.maskNote('for jenny piano lessons call 415-555-0143', parties).text).toBe('for [TEXT_1] piano lessons call [PHONE_1]');
-    expect(v.maskNote('fees aarav term 2').text).toBe('fees [TEXT_2] term 2');
+    expect(v.maskNote('for jenny piano lessons call 415-555-0143', parties).text).toBe('for [WORD_1] piano lessons call [PHONE_1]');
+    expect(v.maskNote('fees aarav term 2').text).toBe('fees [WORD_2] term 2');
     expect(v.maskNote('INV 2231').text).toBe('INV 2231');
     expect(v.maskNote('REIMB POOL CHEMICALS').text).toBe('REIMB POOL CHEMICALS');
     expect(v.maskNote('LOT 14 Q3 DUES').text).toBe('LOT 14 Q3 DUES');
-    expect(v.maskNote('lunch with mike at Rosewood Cafe', parties).text).toBe('lunch with [PERSON_1] at [TEXT_3] [TEXT_4]');
+    expect(v.maskNote('lunch with mike at Rosewood Cafe', parties).text).toBe('lunch with [PERSON_1] at [WORD_3] [WORD_4]');
     // The same unknown word always gets the same placeholder, and it restores locally.
-    expect(v.maskNote('jenny again').text).toBe('[TEXT_1] again');
-    expect(v.restore('[TEXT_1]')).toBe('jenny');
+    expect(v.maskNote('jenny again').text).toBe('[WORD_1] again');
+    expect(v.restore('[WORD_1]')).toBe('jenny');
   });
 });
 

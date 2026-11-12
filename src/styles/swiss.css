@@ -1,0 +1,206 @@
+/* Blindfold visual language (chosen by design review): warm paper, ink, one red line, yellow findings.
+   One sans, one mono, hairline rules, square corners, no shadows, gradients or pills.
+   Red is only ever the privacy boundary; yellow is only ever an audit flag. */
+@import '@fontsource-variable/inter-tight';
+
+:root {
+  --paper: #faf8f5;
+  --ink: #111111;
+  --ink-2: #3a3a3a;
+  --ink-3: #6f6c66;
+  --rule: #e5e2dc;
+  --red: #d92d20;
+  --hl: #ffe45c;
+  --font: 'Inter Tight Variable', 'Inter Variable', system-ui, sans-serif;
+  --line: var(--rule);
+  --gutter: 64px;
+  /* content is 1440px wide at most; the gutter grows on wider screens so the top bar lines up with it */
+  --edge: max(var(--gutter), calc(50vw - 720px + var(--gutter)));
+}
+body { background: var(--paper); font-family: var(--font); color: var(--ink); }
+
+/* ---------- top bar ---------- */
+.topbar { padding: 0 var(--edge); }
+.topbar::after { content: ''; position: absolute; left: var(--edge); right: var(--edge); bottom: 0; height: 1px; background: var(--ink); }
+
+/* ---------- landing ---------- */
+.sw { max-width: 1440px; margin: 0 auto; padding: 0 var(--gutter); }
+.sw-hero { padding-top: 28px; }
+.sw-hero h1 { font-size: 88px; font-weight: 720; letter-spacing: -0.022em; line-height: 1.04; margin: 0 0 22px; max-width: 1180px; }
+/* "blindfolded." types itself out, then the black bar sweeps in behind it and the letters turn paper-white */
+.bw { position: relative; display: inline-block; padding: 0 0.12em 0.04em; margin-top: 0.08em; line-height: 1; }
+.bw-bg { position: absolute; inset: 0; background: var(--ink); transform: scaleX(0); transform-origin: left center; animation: bwIn .45s cubic-bezier(.7, 0, .2, 1) .62s forwards; }
+.bw-text { position: relative; }
+.bw-text span { display: inline-block; opacity: 0; color: var(--ink); animation: bwLetter .2s ease-out forwards, bwLight .18s linear forwards; animation-delay: calc(var(--i) * 35ms + .12s), calc(.74s + var(--i) * 22ms); }
+@keyframes bwIn { to { transform: scaleX(1); } }
+@keyframes bwLetter { from { opacity: 0; transform: translateY(.12em); } to { opacity: 1; transform: none; } }
+@keyframes bwLight { to { color: var(--paper); } }
+
+.sw-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 56px; align-items: end; border-top: 1px solid var(--ink); padding-top: 18px; }
+.sw-intro p { margin: 0; font-size: 19px; line-height: 1.5; color: var(--ink-2); max-width: 760px; }
+.sw-ctas { display: flex; align-items: center; gap: 24px; }
+.sw-btn { display: inline-flex; align-items: center; gap: 12px; height: 52px; padding: 0 24px; background: var(--ink); color: #fff; font-weight: 650; font-size: 16px; text-decoration: none; border: none; }
+.sw-btn:hover { background: #000; }
+.sw-link { font-weight: 600; font-size: 16px; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 6px; color: var(--ink); }
+
+/* the comparison: each statement line is one row across both sides of the boundary */
+.cmp { margin-top: 28px; }
+.cmp-head, .cmp-pair, .cmp-foot { display: grid; grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr); }
+.cmp-head > div { display: flex; align-items: baseline; gap: 12px; padding-bottom: 10px; font-size: 13px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.cmp-head { align-items: baseline; }
+.cmp-head > div:not(.cmp-line-label) { border-bottom: 2px solid var(--ink); }
+.cmp-head .n, .sw-sec-head .n, .sw .step .n, .faq-list .n { font-family: var(--mono); font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
+.cmp-head em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink); font-size: 14px; }
+.cmp-head .flags-h { margin-left: auto; font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--ink-3); }
+/* the label shares the column headings' baseline; the red line starts at their rule and ends with the last row */
+.cmp-head .cmp-line-label { justify-content: center; color: var(--red); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-align: center; white-space: nowrap; }
+.cmp-win { position: relative; overflow: hidden; transition: height .35s ease; }
+.cmp-win::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--red); }
+.cmp-list.sliding { transition: transform .52s cubic-bezier(.6, 0, .2, 1); }
+.cmp-list.sliding > :first-child { opacity: 0; transition: opacity .3s ease; }
+.cmp-pair { animation: rowIn .38s ease-out backwards; animation-delay: var(--d); }
+.cmp-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 100px; gap: 10px; align-items: baseline; align-content: start; padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 15px; line-height: 1.45; min-width: 0; }
+.cmp-row.cloud { grid-template-columns: 56px minmax(0, 1fr) 100px 104px; }
+.cmp-row .d { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.cmp-row .a { font-family: var(--mono); font-size: 13px; text-align: right; white-space: nowrap; }
+.cmp-row .f { text-align: right; }
+.cmp-row .f:empty { display: none; }
+.cmp-row b { font-weight: 680; }
+.cmp-row .nb { white-space: nowrap; }
+.cmp-row .lab { display: block; margin-top: 1px; font-family: var(--mono); font-size: 12px; line-height: 1.4; color: #5e5e59; }
+.cmp-row.not-sent .t { grid-column: 2 / -1; color: var(--ink-3); }
+.sw .bar { display: inline-block; vertical-align: -5px; height: 20px; line-height: 20px; padding: 0 6px; background: var(--ink); color: var(--paper); font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-align: center; white-space: nowrap; overflow: hidden; animation: barIn .2s ease-out backwards; animation-delay: var(--d); }
+.sw .bar.static { animation: none; width: auto; }
+mark { display: inline-block; height: 20px; line-height: 20px; background: var(--hl); color: var(--ink); padding: 0 7px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.cmp-row mark { animation: rowIn .3s ease-out backwards; animation-delay: var(--d); }
+@keyframes rowIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@keyframes barIn { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.cmp-foot { margin-top: 12px; font-size: 12.5px; line-height: 1.55; color: #55524d; }
+.cmp-foot .mono { font-family: var(--mono); font-size: 12px; padding-top: 2px; }
+
+/* ---------- sections ---------- */
+.sw-sec-head { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 0 40px; border-top: 2px solid var(--ink); padding-top: 16px; margin-bottom: 30px; }
+.sw-sec-head .n { font-size: 12.5px; text-transform: uppercase; letter-spacing: .08em; padding-top: 10px; }
+.sw-sec-head h2 { grid-column: 2; margin: 0 0 12px; font-size: 48px; font-weight: 720; letter-spacing: -0.025em; line-height: 1.05; }
+.sw-sec-head p { grid-column: 2; margin: 0; font-size: 18px; line-height: 1.55; color: var(--ink-2); max-width: 760px; }
+.sw-how { margin-top: 96px; }
+.spine-hd, .spine-row { display: grid; grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr); }
+.spine-hd { font-size: 12.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+.spine-hd .ln { text-align: center; color: var(--red); font-size: 9.5px; letter-spacing: .05em; }
+.spine-row { border-bottom: 1px solid var(--rule); }
+/* the crossing labels sit level with the example lines they describe */
+.spine-ln { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; padding-bottom: 44px; }
+.spine-ln::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--red); }
+.sw .spine-ln .cross { position: relative; display: block; max-width: none; border: 0; border-radius: 0; background: var(--paper); color: var(--red); font-family: var(--font); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; padding: 3px 0; text-align: center; line-height: 1.4; }
+.sw .step { background: none; border: 0; border-radius: 0; padding: 24px 0; }
+.sw .step .n { font-size: 13px; font-weight: 600; }
+.sw .step h3 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+.sw .step p { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--ink-2); max-width: 560px; }
+.snip { margin-top: 14px; font-family: var(--mono); font-size: 12.5px; line-height: 1.8; padding: 10px 12px; background: #fff; border: 1px solid var(--rule); color: var(--ink-2); }
+.snip b { color: var(--ink); }
+.snip .cap { display: block; margin-bottom: 4px; font-family: var(--font); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.spine-row .idle { align-self: start; padding-top: 30px; font-family: var(--mono); font-size: 12px; color: #5e5e59; }
+.sw .snip mark { height: auto; line-height: 1.5; font-size: 11.5px; }
+.sw .snip .bar { height: 18px; line-height: 18px; vertical-align: -4px; }
+.sw-faq, .sw-hood { margin-top: 112px; }
+.faq-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 56px; }
+.faq-list li { display: grid; grid-template-columns: 48px 1fr; border-top: 1px solid var(--ink); padding: 18px 0 26px; }
+.faq-list .n { font-size: 13px; padding-top: 4px; }
+.faq-list h3 { margin: 0 0 8px; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.faq-list p { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--ink-2); max-width: 60ch; }
+/* the first column is as wide as the section label column, so "Runs on" starts on the headline's line */
+table.hood { width: 100%; border-collapse: collapse; font-size: 14.5px; table-layout: fixed; }
+table.hood th:nth-child(1) { width: 260px; }
+table.hood th:nth-child(2) { width: 150px; }
+table.hood th:nth-child(3) { width: 300px; }
+table.hood td:last-child { text-wrap: pretty; }
+/* the hard line: everything above runs on your computer, the blind review is where masked data first leaves */
+table.hood tr.cloud td { border-top: 2px solid var(--red); }
+table.hood th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 700; padding: 0 16px 10px 0; border-bottom: 2px solid var(--ink); }
+table.hood td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink-2); }
+table.hood td:first-child { color: var(--ink); font-weight: 650; white-space: nowrap; }
+table.hood code { font-family: var(--mono); font-size: 12px; background: #efece6; padding: 1px 6px; color: var(--ink); }
+.sw-end { margin-top: 112px; border-top: 2px solid var(--ink); padding: 36px 0 40px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px 40px; }
+.sw-end h2 { margin: 0; font-size: 48px; font-weight: 720; letter-spacing: -0.025em; }
+.sw-end .foot-note { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--ink-3); }
+.sw-footer { display: flex; justify-content: space-between; border-top: 1px solid var(--rule); padding: 18px 0 44px; font-size: 13px; color: var(--ink-3); }
+.sw-footer span:first-child { font-weight: 750; color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-bg { animation: none; transform: none; }
+  .bw-text span { animation: none; opacity: 1; color: var(--paper); }
+  .cmp-pair, .cmp-row mark, .sw .bar { animation: none; }
+  .cmp-win, .cmp-list.sliding { transition: none; }
+}
+
+/* ---------- narrower screens ---------- */
+@media (max-width: 1320px) {
+  :root { --gutter: 40px; }
+  .sw-hero h1 { font-size: 80px; }
+  /* flags drop under the line so the masked text keeps its width */
+  .cmp-row.cloud { grid-template-columns: 56px minmax(0, 1fr) 100px; }
+  .cmp-row.cloud .f { grid-column: 2 / -1; text-align: left; }
+}
+@media (max-width: 1060px) {
+  .sw-hero h1 { font-size: 64px; }
+  table.hood th:nth-child(1) { width: 190px; }
+  table.hood th:nth-child(3) { width: 220px; }
+  .sw-intro { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .sw-sec-head { grid-template-columns: minmax(0, 1fr); }
+  .sw-sec-head h2, .sw-sec-head p { grid-column: 1; }
+  .sw-sec-head .n { padding: 0 0 10px; }
+  .cmp-head .flags-h { display: none; }
+  .cmp-head, .cmp-pair, .cmp-foot { grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr); }
+  .cmp-head .cmp-line-label { white-space: normal; }
+  .cmp-row { font-size: 14px; }
+}
+@media (max-width: 760px) {
+  :root { --gutter: 16px; }
+  .topbar nav { display: none; }
+  .sw-hero { padding-top: 24px; }
+  .sw-hero h1 { font-size: 42px; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 20px; }
+  .sw-intro p { font-size: 17px; }
+  .sw-ctas { flex-wrap: wrap; gap: 16px 24px; }
+  /* each line shows the raw text, then the cloud's copy under a red rule */
+  .cmp-head { grid-template-columns: minmax(0, 1fr); }
+  .cmp-head .cmp-line-label { display: none; }
+  .cmp-head > div { flex-wrap: wrap; row-gap: 2px; }
+  .cmp-head > div:first-child { border-bottom: 0; padding-bottom: 4px; }
+  .cmp-head > div:last-child { padding: 2px 0 10px 10px; border-left: 2px solid var(--red); border-bottom: 2px solid var(--ink); }
+  .cmp-win::before { display: none; }
+  .cmp-pair { grid-template-columns: minmax(0, 1fr); padding: 10px 0 12px; border-bottom: 1px solid var(--rule); }
+  .cmp-gap { display: none; }
+  .cmp-row { padding: 0; border-bottom: 0; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; font-size: 14px; }
+  .cmp-row.cloud { grid-template-columns: minmax(0, 1fr) auto; margin: 8px 0 0 52px; padding-left: 10px; border-left: 2px solid var(--red); }
+  .cmp-row.cloud .d, .cmp-row.cloud .a { display: none; }
+  .cmp-row.cloud .f { grid-column: auto; text-align: right; }
+  .cmp-row.not-sent .t { grid-column: 1 / -1; }
+  .cmp-foot { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .cmp-foot > span:empty { display: none; }
+  .sw-how, .sw-faq, .sw-hood, .sw-end { margin-top: 72px; }
+  .sw-sec-head h2, .sw-end h2 { font-size: 32px; }
+  .sw-sec-head p { font-size: 16px; }
+  .spine-hd { display: none; }
+  .spine-row { grid-template-columns: minmax(0, 1fr); }
+  .spine-row > div:empty, .spine-row .idle { display: none; }
+  .spine-ln { padding-bottom: 0; }
+  .spine-row:last-child .spine-ln { order: -1; }
+  .spine-ln { justify-content: flex-start; }
+  .spine-ln::before { top: 50%; bottom: auto; left: 0; right: 0; width: auto; height: 2px; margin: -1px 0 0; }
+  .sw .spine-ln .cross { padding: 6px 10px 6px 0; text-align: left; }
+  .sw .step { padding: 20px 0 22px; }
+  .faq-list { grid-template-columns: minmax(0, 1fr); }
+  .faq-list li { grid-template-columns: 36px minmax(0, 1fr); }
+  table.hood thead { display: none; }
+  table.hood { table-layout: auto; }
+  table.hood tr.cloud { border-top: 2px solid var(--red); }
+  table.hood tr.cloud td { border-top: 0; }
+  table.hood, table.hood tbody, table.hood tr, table.hood td { display: block; }
+  table.hood tr { border-bottom: 1px solid var(--rule); padding: 12px 0; }
+  table.hood tr:first-child { border-top: 2px solid var(--ink); }
+  table.hood td { border: 0; padding: 2px 0; }
+  table.hood td:nth-child(2)::before { content: 'Runs on: '; color: var(--ink-3); }
+  table.hood td:nth-child(3)::before { content: 'How: '; color: var(--ink-3); }
+  .sw-end { grid-template-columns: minmax(0, 1fr); }
+  .sw-footer { flex-direction: column; gap: 6px; }
+}

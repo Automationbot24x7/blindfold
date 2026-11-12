@@ -1,7 +1,7 @@
 // Firebase wiring: app, App Check, AI Logic (hybrid), Remote Config.
 // Every AI call in this app goes through the models created here.
 import { initializeApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import {
   getAI,
   getGenerativeModel,
@@ -24,14 +24,15 @@ export const firebaseApp = initializeApp({
 });
 
 // App Check protects the cloud model from abuse. On localhost we use the debug provider
-// (its token is registered in the Firebase console); the hosted site uses reCAPTCHA v3.
-const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-if (isLocal) {
+// (its token is registered in the Firebase console); the hosted site uses reCAPTCHA Enterprise
+// (Google Cloud Fraud Defense), whose site key is public and lives in .env.production.
+// The debug path exists only in development builds; production builds never contain it.
+if (import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(location.hostname)) {
   (self as unknown as { FIREBASE_APPCHECK_DEBUG_TOKEN: boolean | string }).FIREBASE_APPCHECK_DEBUG_TOKEN =
-    env.VITE_APPCHECK_DEBUG_TOKEN || true;
+    import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || true;
 }
 export const appCheck = initializeAppCheck(firebaseApp, {
-  provider: new ReCaptchaV3Provider(env.VITE_RECAPTCHA_SITE_KEY || 'debug-only'),
+  provider: new ReCaptchaEnterpriseProvider(env.VITE_RECAPTCHA_SITE_KEY || 'debug-only'),
   isTokenAutoRefreshEnabled: true,
 });
 

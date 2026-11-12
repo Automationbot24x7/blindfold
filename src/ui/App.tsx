@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import { AuditPage } from './Audit';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Landing } from './Landing';
 import { TopBar } from './TopBar';
+
+// The audit (and with it Firebase, App Check and the AI SDK) loads only when someone opens it.
+const AuditPage = lazy(() => import('./Audit').then(m => ({ default: m.AuditPage })));
 
 function useRoute(): string {
   const read = () => (location.hash.replace(/^#/, '') || '/').split('?')[0];
@@ -22,7 +24,7 @@ export function App() {
   return (
     <>
       <TopBar route={route} />
-      {route === '/audit' ? <AuditPage /> : <Landing />}
+      {route === '/audit' ? <Suspense fallback={<div className="main start" />}><AuditPage /></Suspense> : <Landing />}
     </>
   );
 }

@@ -24,11 +24,11 @@ export function maskedLine(t: Txn, vault: Vault, currency: Currency, parties = p
   const note = t.note ? vault.maskNote(t.note, parties).text : ''; // default-deny: only everyday purpose words survive
   return [
     t.date, t.direction === 'out' ? 'OUT' : 'IN', money(t.amount, currency), `via ${t.rail}`,
-    who && `${who} ${kind}`, note && `note: "${note}"`, t.category && `head: ${label(t.category)}`,
+    who && `${who} ${kind}`, note && `note: "${note}"`, t.category && `category: ${label(t.category)}`,
   ].filter(Boolean).join(' ');
 }
 
-const REVIEW_INSTRUCTIONS =
+export const REVIEW_INSTRUCTIONS =
   'You are a careful audit reviewer helping a small bookkeeping practice. Deterministic code found the pattern below in a ' +
   "client's bank statement. Real names and identifiers were replaced with placeholders in square brackets (a word, an underscore and a number, like PERSON_1): " +
   'keep every placeholder exactly as written and never guess who it is. Use only the facts given; do not calculate new numbers. ' +
