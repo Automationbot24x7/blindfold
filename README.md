@@ -94,6 +94,7 @@ After the prompts were final, three more made-up statements were written with an
 - **The on-device model's misses** were plausible confusions: a sports-field rental read as a service, a website subscription as a purchase, fuel as a utility, a country club as rent.
 - **The missed problem:** a loan repaid after 18 days, outside the 10-day round-trip window (adjustable in Remote Config).
 - **The false alarm:** a payment to a dental supplier and a deposit from a dental insurer, of similar amounts, were paired as money going out and coming back, because both names contain "DENTAL". The round-trip check now links two parties only through a person's surname or a business's brand word. A person's "paid back" was also booked as dues; repayment wording is now recognised. Both fixes have tests, but they were made after seeing these statements, so the numbers above are from before the fixes.
+- **Run again after the fixes** (same laptop, same day; no longer an unseen test, so read it as a regression check): 83 of 95 categories correct, 43 of 55 on-device labels correct, the same 6 of 7 planted problems found, no false alarm, and nothing from the statements in any of the 6 requests.
 
 ### Reading real bank exports
 
@@ -148,10 +149,14 @@ const where = res.response.inferenceSource; // 'on_device', shown in the app and
 | [`src/lib/device.ts`](src/lib/device.ts) | Checks whether the built-in model is available and calls `initializeDeviceModel` (from a button click) to download it, with progress. |
 | [`src/engine/ondevice.ts`](src/engine/ondevice.ts) | `categoriseOnDevice` (payee labelling in batches, with a keyed enum constraint) and `leakGuard` (re-reads outgoing text). |
 | [`src/engine/cloud.ts`](src/engine/cloud.ts) | Builds the masked requests, `cloudFirst` (cloud with deadline, on-device fallback, records `inferenceSource`), `reviewFinding` and `runSecondOpinion`. |
-| [`src/engine/pipeline.ts`](src/engine/pipeline.ts) | Runs one audit end to end, applies the last check before anything is sent, and records every outgoing request word for word in the privacy ledger. |
+| [`src/engine/pipeline.ts`](src/engine/pipeline.ts) | Runs one audit end to end, applies the last check before anything is sent, and records every outgoing request word for word in the privacy ledger. Carries on when a model call fails. |
+| [`src/engine/proof.ts`](src/engine/proof.ts) | Lists every word and number of the raw statement that must stay on the computer, and searches outgoing requests for them: before sending, and again for the receipt. |
+| [`src/engine/vault.ts`](src/engine/vault.ts) | The code vault: payees to codes, default-deny masking of notes, and the codes back to names. |
 | [`src/lib/remoteConfig.ts`](src/lib/remoteConfig.ts) | Limits and model names from Remote Config, with built-in defaults. |
 
-Other folders: `src/engine` also holds the CSV import, narration parsing, rules, detectors, the code vault and the everyday-word list; `src/ui` is the React interface; `tools/` has the sample and held-out generators, the recorded-run checker and the screenshot script; `eval/holdout` holds the unseen test statements and their results; `lab.html` with `src/lab/` is a small internal page used early on to time on-device labelling and is not part of the app.
+Other folders: `src/engine` also holds the CSV import ([`csv.ts`](src/engine/csv.ts)), narration parsing, rules, detectors and the everyday-word list; `src/ui` is the React interface; `tools/` has the sample and held-out generators, the recorded-run checker and the screenshot script; `eval/holdout` holds the unseen test statements and their results, and `eval/formats` the bank export layouts; `lab.html` with `src/lab/` is a small internal page used early on to time on-device labelling and is not part of the app.
+
+`npm test` runs 45 checks without a browser or a network: the parser and detectors, the bank export layouts, the privacy tests (nothing from any statement appears in its masked lines; the recorded runs pass the receipt's search), and whole audits with stand-in models in both modes, including a model that returns a broken answer, a leak guard that cannot run and a cloud that is out of quota ([`src/engine/pipeline.test.ts`](src/engine/pipeline.test.ts)).
 
 ## Run it yourself
 
@@ -172,15 +177,18 @@ Firebase setup:
 1. Create a Firebase project and add a web app. Put its config in `.env.local` (see [`.env.example`](.env.example)).
 2. In **Firebase AI Logic**, enable the Gemini Developer API.
 3. In **App Check**, register a debug token for local development and put it in `.env.development.local` as `VITE_APPCHECK_DEBUG_TOKEN`. For a hosted site, create a reCAPTCHA Enterprise key for your domain, register it for the web app, and put the site key in `.env.production` as `VITE_RECAPTCHA_SITE_KEY`.
-4. Optional: in **Remote Config**, override `cloud_model`, `device_batch_size`, `duplicate_window_days`, `round_trip_window_days`, or the limits per currency such as `cash_threshold_usd` and `approval_limit_usd` (defaults are built in).
+4. Optional: in **Remote Config**, override `cloud_model`, `device_batch_size`, `duplicate_window_days`, `round_trip_window_days`, the limits per currency such as `cash_threshold_usd` and `approval_limit_usd`, or how much of the cloud quota one audit may use (`max_label_requests`, `max_reviews`). Defaults are built in.
 5. Deploy with `firebase deploy --only hosting`, after pointing [`.firebaserc`](.firebaserc) at your own project and site.
 
 To record a new replay, open `http://localhost:5173/?record=1#/audit` in Chrome with the built-in model and run a sample; the development server saves the run to `public/recorded/`.
 
 ## Limits
 
-- Statements must be CSV exports, and descriptions are expected in English.
-- Masking is rule-based with an on-device check. It is designed to fail closed, but no masking is perfect, which is why the receipt shows every word that left.
+- Statements must be CSV exports (not PDF or spreadsheet files), up to 3,000 transactions. Descriptions are expected in English; a description in another language is still masked, as one code, but its payee and purpose are not picked apart.
+- A file with a single unsigned amount column and nothing that says debit or credit (some card statements) cannot be read correctly; the app says so when it sees one.
+- Masking is rule-based with an on-device check and an exact-match search before sending. It is designed to fail closed, but no masking is perfect, which is why the receipt shows every word that left. The search can only find what is written in the statement: amounts and dates are sent as they are, by design.
+- In the masked cloud-only mode the cloud never sees a payee's name, so its category labels are rougher than the built-in model's. The findings come from code and are the same in both modes.
+- One audit asks the cloud to label at most 180 payees and reviews at most 12 findings automatically (the cloud model runs on a shared free quota); the rest wait for a click.
 - On-device labelling varies slightly between runs and takes longer the first time the model loads.
 - Flags are prompts for questions to the client, not an accounting or legal opinion.
 

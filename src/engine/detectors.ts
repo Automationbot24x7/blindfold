@@ -165,7 +165,7 @@ export function detect(txns: Txn[], cfg: AuditConfig): Finding[] {
     const total = personal.reduce((s, t) => s + t.amount, 0);
     findings.push({
       id: fid('pers'), kind: 'PERSONAL_SPEND', severity: personal.length >= 3 ? 'medium' : 'low',
-      title: `${personal.length} payment${personal.length === 1 ? '' : 's'} look personal, not business (${m(total)})`,
+      title: `${personal.length} payment${personal.length === 1 ? ' looks' : 's look'} personal, not business (${m(total)})`,
       facts: { payments: personal.length, total: m(total) },
       txnIds: personal.map(t => t.id),
     });
