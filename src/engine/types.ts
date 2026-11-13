@@ -52,7 +52,8 @@ export interface Finding {
   txnIds: number[];
   review?: Review; // filled after the blind review
   sentText?: string; // exactly what left the device for this finding
-  reviewStatus?: 'pending' | 'done' | 'failed' | 'blocked';
+  reviewStatus?: 'pending' | 'done' | 'failed' | 'blocked' | 'skipped'; // skipped = over the per-audit limit, waits for a click
+  reviewError?: string; // why the review did not come back (shown with a "Try again" button)
 }
 
 export type Verdict = 'LIKELY_ISSUE' | 'NEEDS_EXPLANATION' | 'LIKELY_FINE';

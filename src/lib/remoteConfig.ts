@@ -7,6 +7,8 @@ export interface AppConfig {
   cloudModel: string;
   cloudFallbackModel: string;
   deviceBatchSize: number;
+  maxLabelRequests: number; // cloud requests one audit may spend on labelling payees
+  maxReviews: number; // findings reviewed automatically in one audit
   audit: Record<Currency, AuditConfig>;
   fetchedAt?: string;
   source: 'defaults' | 'remote';
@@ -18,6 +20,9 @@ const defaults: Record<string, string | number> = {
   cloud_model: 'gemini-3.5-flash-lite',
   cloud_fallback_model: 'gemini-3.8-flash',
   device_batch_size: 12,
+  // The cloud model runs on a free quota shared by everyone who tries the app; one audit takes a fair share.
+  max_label_requests: 12,
+  max_reviews: 12,
   duplicate_window_days: DEFAULT_CONFIG.USD.duplicateWindowDays,
   round_trip_window_days: DEFAULT_CONFIG.USD.roundTripWindowDays,
   ...Object.fromEntries(CURRENCIES.flatMap(c => [
@@ -35,6 +40,8 @@ function build(v: Record<string, string | number>, source: AppConfig['source'], 
     cloudModel: String(v.cloud_model),
     cloudFallbackModel: String(v.cloud_fallback_model),
     deviceBatchSize: n('device_batch_size'),
+    maxLabelRequests: n('max_label_requests'),
+    maxReviews: n('max_reviews'),
     audit: Object.fromEntries(CURRENCIES.map(c => [c, {
       ...DEFAULT_CONFIG[c], ...shared,
       cashThreshold: n(`cash_threshold_${c.toLowerCase()}`), approvalLimit: n(`approval_limit_${c.toLowerCase()}`),

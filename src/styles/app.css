@@ -306,3 +306,22 @@ table.ledger { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
 /* reCAPTCHA's floating badge is hidden; the audit page shows its notice in words instead, as its terms allow. */
 .grecaptcha-badge { visibility: hidden; }
+
+/* How a dropped file was read, and pointing out its columns by hand. */
+.read-as { display: grid; gap: 6px; padding: 2px 0 2px 16px; border-left: 2px solid var(--ink); }
+.read-as p { margin: 0; font-size: 14.5px; }
+.read-as p.muted { font-size: 13.5px; }
+.read-currency { display: flex; align-items: baseline; gap: 16px; margin-top: 4px; font-size: 13.5px; }
+.page-head p.read-note { font-size: 13.5px; color: var(--ink-3); margin-top: 4px; max-width: 820px; }
+.map-scroll { overflow: auto; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); }
+table.map { border-collapse: collapse; font-size: 13px; width: 100%; }
+table.map th, table.map td { padding: 7px 16px 7px 0; text-align: left; white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--rule); }
+table.map td { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+table.map select { font: inherit; font-weight: 600; font-size: 13px; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--ink); border-radius: 0; padding: 2px 4px 2px 0; cursor: pointer; }
+
+/* The privacy number is measured. Red here means the boundary was crossed. */
+.proof-line { margin: 0 0 18px; font-size: 14.5px; color: var(--ink-2); max-width: 900px; }
+.proof-line b { color: var(--ink); }
+.kv .bad dd { background: var(--red); color: #fff; padding: 0 6px; }
+.stat.zero.bad b { background: var(--red); color: #fff; }
+.review-miss { margin: 14px 0 0; padding: 2px 0 2px 16px; border-left: 2px solid var(--ink-4); color: var(--ink-2); font-size: 14.5px; }

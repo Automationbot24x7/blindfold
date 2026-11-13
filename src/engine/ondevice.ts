@@ -18,6 +18,7 @@ export interface DeviceCall {
   rows: number;
   ms: number;
   source: string; // as reported by the SDK
+  failed?: string; // set when the on-device model could not answer this call
 }
 
 const examples: Record<Direction, string> = {
@@ -76,12 +77,23 @@ export async function categoriseOnDevice(
         'Pick the single best code for each line. Use UNS only when the line gives no clue.\n\n' +
         `Codes:\n${legend}\n\n${examples[dir]}\n\nLines:\n` +
         batch.map((g, k) => `r${k + 1}: ${lineFor(g, currency)}`).join('\n');
+      const purpose = `Label ${batch.length} payees (${dir === 'out' ? 'money out' : 'money in'})`;
+      const rows = batch.reduce((s, g) => s + g.txns.length, 0);
       const t0 = performance.now();
-      const res = await model.generateContent(prompt);
-      const ms = performance.now() - t0;
-      const parsed = JSON.parse(res.response.text()) as Record<string, string>;
-      const answer = batch.map((_, k) => (codes.includes(parsed[`r${k + 1}`]) ? parsed[`r${k + 1}`] : 'UNS'));
-      onBatch(batch, answer, { purpose: `Label ${batch.length} payees (${dir === 'out' ? 'money out' : 'money in'})`, rows: batch.reduce((s, g) => s + g.txns.length, 0), ms, source: res.response.inferenceSource ?? 'unknown' });
+      // Two tries. If the model still cannot answer (a broken reply, a lost session), these payees
+      // are reported as unsure so the audit carries on; raw text still never goes anywhere else.
+      let done = false;
+      for (let attempt = 0; attempt < 2 && !done; attempt++) {
+        try {
+          const res = await model.generateContent(prompt);
+          const parsed = JSON.parse(res.response.text()) as Record<string, string>;
+          const answer = batch.map((_, k) => (codes.includes(parsed[`r${k + 1}`]) ? parsed[`r${k + 1}`] : 'UNS'));
+          onBatch(batch, answer, { purpose, rows, ms: performance.now() - t0, source: res.response.inferenceSource ?? 'unknown' });
+          done = true;
+        } catch (e) {
+          if (attempt === 1) onBatch(batch, batch.map(() => 'UNS'), { purpose, rows, ms: performance.now() - t0, source: 'none', failed: (e as Error).message || 'no answer' });
+        }
+      }
     }
   }
 }

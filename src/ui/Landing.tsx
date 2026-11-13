@@ -187,8 +187,9 @@ export function Landing() {
         <ol className="faq-list">
           <li><span className="n">01</span><div><h3>Does my client’s statement go to the cloud?</h3><p>No. The raw statement never leaves your computer. Rows are read by the AI inside Chrome, or, if your Chrome does not have it, masked by rules first. Either way only masked lines are sent, and every one is listed on the receipt.</p></div></li>
           <li><span className="n">02</span><div><h3>Can the cloud work out who PERSON_1 is?</h3><p>It sees a code, an amount, a date and a few everyday words. The table that turns codes back into names exists only in your open browser tab.</p></div></li>
-          <li><span className="n">03</span><div><h3>Can I trust the arithmetic?</h3><p>The AI never calculates. Totals, day gaps and thresholds come from plain code; the AI only labels rows and explains patterns that code has already measured.</p></div></li>
-          <li><span className="n">04</span><div><h3>Which statements work?</h3><p>CSV exports from most banks: a date, a description, and either debit and credit columns or one signed amount. US, UK, European and Indian layouts are detected.</p></div></li>
+          <li><span className="n">03</span><div><h3>How do I know nothing slipped through?</h3><p>You do not have to take the app’s word for it. Before a request is sent, and again when the receipt is drawn, your browser searches it for every name, word and number in the statement that is not an everyday word. The receipt shows how many it looked for and how many it found.</p></div></li>
+          <li><span className="n">04</span><div><h3>Can I trust the arithmetic?</h3><p>The AI never calculates. Totals, day gaps and thresholds come from plain code; the AI only labels rows and explains patterns that code has already measured.</p></div></li>
+          <li><span className="n">05</span><div><h3>Which statements work?</h3><p>CSV exports from most banks, with or without a header row: a date, a description, and either debit and credit columns or one signed amount. US, UK, European and Indian layouts are worked out from the file; if yours is not, you point at the columns.</p></div></li>
         </ol>
       </section>
 
@@ -199,9 +200,9 @@ export function Landing() {
           <tbody>
             <tr><td>Label every payee</td><td>Your computer</td><td><code>ONLY_ON_DEVICE</code></td><td>Raw text may only meet the built-in model. With no model the call fails; it can never fall back to the cloud.</td></tr>
             <tr><td>Patterns and numbers</td><td>Plain code</td><td>Deterministic checks</td><td>Double payments, round trips, cash just under a reporting limit, payments split under an approval limit.</td></tr>
-            <tr><td>Mask and re-check</td><td>Your computer</td><td>Code vault, default-deny notes, <code>ONLY_ON_DEVICE</code> leak guard</td><td>Nothing unknown leaves; the built-in model re-reads outgoing text as a second check.</td></tr>
+            <tr><td>Mask and re-check</td><td>Your computer</td><td>Code vault, default-deny notes, <code>ONLY_ON_DEVICE</code> leak guard, exact-match last check</td><td>Nothing unknown leaves. The built-in model re-reads outgoing text, then code searches it for the statement’s own words; a request that still shows one is stopped.</td></tr>
             <tr className="cloud"><td>Blind review</td><td>The cloud, masked</td><td><code>PREFER_IN_CLOUD</code>, 25 s deadline</td><td>A larger model judges the pattern. Offline or busy, the built-in model drafts it, labelled as a draft.</td></tr>
-            <tr><td>Limits and model names</td><td>Firebase</td><td>Remote Config</td><td>Reporting limits and models change without a redeploy.</td></tr>
+            <tr><td>Limits and model names</td><td>Firebase</td><td>Remote Config</td><td>Reporting limits, model names and how many cloud requests one audit may use change without a redeploy.</td></tr>
             <tr><td>Abuse protection</td><td>Firebase</td><td>App Check</td><td>Only this app can call the cloud model.</td></tr>
           </tbody>
         </table>

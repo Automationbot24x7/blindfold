@@ -77,11 +77,16 @@ export function detect(txns: Txn[], cfg: AuditConfig): Finding[] {
     for (let j = i + 1; j < out.length; j++) {
       const a = out[i], b = out[j];
       if (!a.counterpartyKey || a.counterpartyKey !== b.counterpartyKey || a.amount !== b.amount) continue;
+      if (a.counterpartyKind === 'SELF') continue; // moving money to your own savings twice is not a double payment
       const gap = days(a.date, b.date);
       if (gap > cfg.duplicateWindowDays) continue;
       const invA = a.note.match(/\b(?:INV|INVOICE|BILL)\s*#?\s*(\w+)/i)?.[1];
       const invB = b.note.match(/\b(?:INV|INVOICE|BILL)\s*#?\s*(\w+)/i)?.[1];
       const sameInvoice = !!invA && invA === invB;
+      // A standing payment (the same wage or delivery every week) is a routine, not a mistake:
+      // three or more equal payments to one payee, this pair several days apart, no shared invoice.
+      const equal = out.filter(x => x.counterpartyKey === a.counterpartyKey && x.amount === a.amount).length;
+      if (equal >= 3 && gap >= 5 && !sameInvoice) continue;
       const key = `dup:${a.id}:${b.id}`;
       if (used.has(key)) continue;
       used.add(key);

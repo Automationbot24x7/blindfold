@@ -6,22 +6,28 @@ import { CATEGORIES, codesFor, label } from './categories';
 import { money, type Currency } from './detectors';
 import { cloudFirstModel, deviceModel } from '../lib/firebase';
 import type { Finding, Review, Txn, Verdict } from './types';
-import type { Vault } from './vault';
+import type { Party, PartyKind, Vault } from './vault';
 
 export interface OutgoingPayload {
   purpose: string;
   text: string; // exactly what is sent
 }
 
-const partiesOf = (rows: Txn[]) =>
-  rows.filter(t => t.counterparty && (t.counterpartyKind === 'PERSON' || t.counterpartyKind === 'BUSINESS'))
-    .map(t => ({ name: t.counterparty, kind: t.counterpartyKind as 'PERSON' | 'BUSINESS' }));
+/** Every named party in these rows, whatever its kind: a person, a business, a bank, a tax office, the client's own account. */
+export const partiesOf = (rows: Txn[]): Party[] =>
+  rows.filter(t => t.counterparty && t.counterpartyKind !== 'NONE')
+    .map(t => ({ name: t.counterparty, kind: t.counterpartyKind as PartyKind }));
 
-/** One masked line per row: only the fields the review needs (data minimisation). */
+/**
+ * One masked line per row: only the fields the review needs (data minimisation). The payee is
+ * always a placeholder, never text: the cloud learns what kind of party it is and nothing else.
+ */
 export function maskedLine(t: Txn, vault: Vault, currency: Currency, parties = partiesOf([t])): string {
-  const who = t.counterparty ? vault.mask(t.counterparty, parties).text : '';
+  const who = t.counterparty && t.counterpartyKind !== 'NONE' ? vault.registerParty(t.counterparty, t.counterpartyKind) : '';
   const kind = t.counterpartyKind === 'NONE' ? '' : `(${t.counterpartyKind.toLowerCase()})`;
-  const note = t.note ? vault.maskNote(t.note, parties).text : ''; // default-deny: only everyday purpose words survive
+  const masked = t.note ? vault.maskNote(t.note, parties).text : ''; // default-deny: only everyday purpose words survive
+  // A note that is nothing but placeholders tells the reviewer nothing, so it is not sent at all.
+  const note = /[\p{L}\p{N}]/u.test(masked.replace(/\[[A-Z]+_\d+\]/g, '')) ? masked : '';
   return [
     t.date, t.direction === 'out' ? 'OUT' : 'IN', money(t.amount, currency), `via ${t.rail}`,
     who && `${who} ${kind}`, note && `note: "${note}"`, t.category && `category: ${label(t.category)}`,
@@ -86,10 +92,28 @@ export async function cloudFirst(
     return { text: res.response.text(), source: src, fallbackReason: src === 'on_device' ? 'cloud unreachable' : undefined, ms: performance.now() - t0 };
   } catch (e) {
     const slow = (e as Error).name === 'AbortError' || /timeout/i.test((e as Error).message);
-    if (!slow) throw e;
-    const res = await deviceModel({ responseConstraint: constraint }).generateContent(text);
-    return { text: res.response.text(), source: 'on_device', fallbackReason: `cloud took over ${Math.round(deadlineMs / 1000)} s`, ms: performance.now() - t0 };
+    if (!slow) throw new Error(plainError(e));
+    const secs = Math.round(deadlineMs / 1000);
+    let res;
+    try {
+      res = await deviceModel({ responseConstraint: constraint }).generateContent(text);
+    } catch {
+      throw new Error(`The cloud took more than ${secs} s to answer, and this browser has no on-device model to draft with.`);
+    }
+    return { text: res.response.text(), source: 'on_device', fallbackReason: `cloud took over ${secs} s`, ms: performance.now() - t0 };
   }
+}
+
+/** A cloud error in words a bookkeeper can act on (the technical message is kept at the end). */
+export function plainError(e: unknown): string {
+  const raw = (e as Error)?.message || String(e);
+  const why =
+    /429|quota|resource.?exhausted|rate.?limit/i.test(raw) ? 'The free cloud quota is used up for the moment. Try again in a minute.'
+    : /app.?check|401|403|permission/i.test(raw) ? 'App Check could not verify this browser. Try a normal Chrome window without blockers.'
+    : /500|503|overloaded|unavailable|high demand/i.test(raw) ? 'The cloud model is busy. Try again in a minute.'
+    : /failed to fetch|network|offline|fetch-error/i.test(raw) ? 'The cloud could not be reached, and this browser has no on-device model to draft with.'
+    : 'The cloud did not answer.';
+  return `${why} (${raw.slice(0, 140)})`;
 }
 
 export async function reviewFinding(payload: OutgoingPayload, cloudModelName: string, vault: Vault): Promise<Review> {
@@ -112,7 +136,7 @@ export async function reviewFinding(payload: OutgoingPayload, cloudModelName: st
 }
 
 /** Second opinion on rows the device was unsure about: built first (masked), sent later. */
-export function secondOpinionPayload(rows: Txn[], vault: Vault, currency: Currency, context: string): OutgoingPayload {
+export function secondOpinionPayload(rows: Txn[], vault: Vault, currency: Currency, context: string, deviceReadFirst = true): OutgoingPayload {
   const parties = partiesOf(rows);
   const all = [...new Set(rows.flatMap(r => codesFor(r.direction)))].filter(c => c !== 'UNS');
   const legend = CATEGORIES.filter(c => all.includes(c.code)).map(c => `${c.code} = ${c.label}: ${c.hint}`).join('\n');
@@ -120,7 +144,9 @@ export function secondOpinionPayload(rows: Txn[], vault: Vault, currency: Curren
     `Label each bank-statement line for the books. Organisation: ${context}\nCodes:\n${legend}\n\n` +
     'Pick one code per line. Names are placeholders; judge from the rest of the line.\n' +
     rows.map((t, k) => `r${k + 1}: ${maskedLine({ ...t, category: undefined }, vault, currency, parties)}`).join('\n');
-  return { purpose: `Second opinion on ${rows.length} unsure row${rows.length === 1 ? '' : 's'}`, text };
+  const n = `${rows.length} payee${rows.length === 1 ? '' : 's'}`;
+  // With the on-device model these are the payees it was unsure about; without it, every payee rules could not label.
+  return { purpose: deviceReadFirst ? `Second opinion on ${n} the device was unsure about` : `Second opinion (blind labels) for ${n}`, text };
 }
 
 export async function runSecondOpinion(

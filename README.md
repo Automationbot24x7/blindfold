@@ -14,7 +14,7 @@ Open **https://blindfold-audit.web.app**, choose **Audit**, and pick a sample st
 
 - **With Chrome's built-in AI** (desktop Chrome 139 or newer on [supported hardware](https://developer.chrome.com/docs/ai/get-started)): choose **Run on this computer**. The first time, Chrome downloads the model once (about 4 GB); the app asks before starting that download, and its status line shows whether the model is ready.
 - **Without it:** choose **Watch a recorded run** to replay a real audit recorded on a laptop that has the built-in model (always labelled as a recording), or choose **Run on this computer** and accept the **masked cloud-only mode**. In that mode rows are masked by rules on your computer first, and the cloud labels the masked lines.
-- **Your own statement:** drop a CSV export from your bank. Date, description and either debit and credit columns or one signed amount are detected automatically (US, UK, European and Indian layouts). The file is read in the browser tab and never uploaded.
+- **Your own statement:** drop a CSV export from your bank. The date, description and amount columns are worked out from the file, with or without a header row (US, UK, European and Indian layouts; see [Reading real bank exports](#reading-real-bank-exports)). The app shows how it read the file before the audit starts, and if it cannot tell the columns apart, you point at them. The file is read in the browser tab and never uploaded.
 
 ## The problem
 
@@ -29,11 +29,13 @@ The cloud does not need to know who anyone is to judge a pattern. So Blindfold s
 | 1. Rules | Your computer | none | Obvious rows (ATM, interest, bank charges, tax, rent, utilities, wages, own-account transfers) are labelled by plain rules and never meet a model. |
 | 2. Label every payee | Your computer | `ONLY_ON_DEVICE` | Gemini Nano, built into Chrome, reads each remaining payee once and picks a category from a fixed list (structured output with `responseConstraint`). Raw text may only meet the built-in model: with no model the call fails, it never falls back to the cloud. |
 | 3. Find patterns | Your computer | none | Deterministic code finds double payments, round trips (money out and back from a related party), cash just under a reporting limit, payments split under an approval limit, personal spending and unusual amounts. The AI never calculates. |
-| 4. Mask and re-check | Your computer | `ONLY_ON_DEVICE` | Names become numbered codes (`BUSINESS_6` is the 6th business in the statement, so a double payment still shows). A note word that is not on an everyday-word list is masked too. Gemini Nano then re-reads everything about to leave as a leak guard. |
+| 4. Mask and re-check | Your computer | `ONLY_ON_DEVICE` | Every payee becomes a numbered code (`BUSINESS_6` is the 6th business in the statement, so a double payment still shows). In a note, a word that is not on an everyday-word list is masked too, and so is a number that could be the tail of a card or an account. Gemini Nano then re-reads everything about to leave as a leak guard, and plain code searches each request for the statement's own words before it is sent. |
 | 5. Blind review | The cloud | `PREFER_IN_CLOUD` | Gemini 3.5 Flash-Lite judges each finding from the masked lines and drafts a question for the client (structured output with `responseSchema`). Rows the built-in model was unsure about get a blind second opinion the same way. If the cloud call fails (for example, the laptop is offline) or does not answer within 25 seconds, the built-in model answers instead, and the answer is labelled as an on-device draft with an "Ask the cloud again" button. |
 | 6. Names back | Your computer | none | The codes in each answer are replaced with the real names, and the privacy receipt lists every request word for word. |
 
-Firebase also provides **App Check** (reCAPTCHA Enterprise on the hosted site, enforced for Firebase AI Logic, so only this app can call the cloud model), **Remote Config** (reporting limits, approval limits and model names, changeable without a redeploy) and **Hosting**.
+Firebase also provides **App Check** (reCAPTCHA Enterprise on the hosted site, enforced for Firebase AI Logic, so only this app can call the cloud model), **Remote Config** (reporting limits, approval limits, model names and how many cloud requests one audit may use, changeable without a redeploy) and **Hosting**.
+
+No step is a single point of failure. If the built-in model returns a broken answer, those payees get a blind second opinion instead of stopping the audit. If the cloud fails, the findings (which come from code) still appear, each with a "Try again" button for its review.
 
 ### What actually leaves the computer
 
@@ -55,12 +57,12 @@ Rows that need no second look are never sent at all. The X-ray view shows all fo
 Layered so that a single miss does not leak a name:
 
 1. **Unmasked text never reaches the cloud.** Raw rows are read only by the built-in model, through `ONLY_ON_DEVICE`, which fails rather than falling back. In the masked cloud-only mode for browsers without the built-in model, rows are masked by rules on the computer before anything is sent.
-2. **A code vault on the computer.** Every person and business in the statement is registered in statement order and replaced by a stable code. The table that turns codes back into names exists only in the open browser tab.
-3. **Default-deny notes.** In free-text notes, only everyday words, short numbers, dates and invoice codes survive; anything else (a first name, a place) becomes `[WORD_n]`.
+2. **A payee is never sent as text.** Every party in the statement (a person, a business, a bank, a tax office, the client's own other account) is registered in statement order and replaced by a stable code. The cloud learns what kind of party it is and nothing else. The table that turns codes back into names exists only in the open browser tab.
+3. **Default-deny notes.** In free-text notes, only everyday words, dates and document numbers survive. Anything else becomes a placeholder: a first name or a place (`[WORD_n]`), and any number that is not plainly a count, a year or an invoice number, so the last four digits of a card or an account never leave.
 4. **Pattern masks** for phone numbers, emails, card, account and ID numbers.
-5. **An on-device leak guard** re-reads every outgoing line and masks anything that still looks like a name.
-6. **A last check before sending.** If an identifier pattern is still visible, it is masked; if that fails, the request is blocked and never sent.
-7. **A privacy receipt** lists every request word for word, with what was masked, and can be printed or downloaded as JSON.
+5. **An on-device leak guard** re-reads every outgoing line and masks anything that still looks like a name. It catches what rules cannot know: that "June" in a note is a child and not a month.
+6. **A last check before sending, by exact match.** The app keeps a list of every word and number in the raw statement that is not an everyday word. Each request is searched for all of them. Anything found is masked on the spot; if something is still readable after that, the request is stopped and never sent. This check knows nothing about how the masking works, so a bug in the masking cannot hide from it ([`src/engine/proof.ts`](src/engine/proof.ts)).
+7. **A receipt that is measured, not asserted.** The receipt's first number ("raw names, IDs or account numbers sent") is that same search, run again in the browser whenever the receipt is drawn, including for the recorded runs. It shows how many words and numbers it looked for and how many it found. The receipt also lists every request word for word and can be printed or downloaded as JSON.
 
 ## Results on the sample statements
 
@@ -72,7 +74,7 @@ The three samples are made-up organisations with problems planted for the audit 
 | Willow Creek Homeowners Association | 45 | 29 | 16 | 4 | 0 | 45 / 45 |
 | Maple Street Animal Rescue | 34 | 25 | 9 | 5 | 0 | 31 / 34 |
 
-- **Leak check:** every line sent was scanned for each payee's name and its distinctive words, and for every phone number, long account-style number and email in the statements. None appeared.
+- **Leak check:** every request was searched for every word and number of its statement that is not an everyday word (74, 44 and 38 of them). None appeared. The app repeats this search in your browser each time a recorded run is replayed, and `npm test` repeats it too.
 - **Reviews:** 13 of the 14 reviews were answered by the cloud; one fell back to an on-device draft when the cloud took longer than the deadline.
 - **Errors:** three cheques to a vet clinic were labelled as purchases rather than services, an office-supply shop as bank charges, and a jewellery purchase as an own-account transfer rather than personal spending. On-device labels can vary a little from run to run.
 
@@ -92,6 +94,24 @@ After the prompts were final, three more made-up statements were written with an
 - **The on-device model's misses** were plausible confusions: a sports-field rental read as a service, a website subscription as a purchase, fuel as a utility, a country club as rent.
 - **The missed problem:** a loan repaid after 18 days, outside the 10-day round-trip window (adjustable in Remote Config).
 - **The false alarm:** a payment to a dental supplier and a deposit from a dental insurer, of similar amounts, were paired as money going out and coming back, because both names contain "DENTAL". The round-trip check now links two parties only through a person's surname or a business's brand word. A person's "paid back" was also booked as dues; repayment wording is now recognised. Both fixes have tests, but they were made after seeing these statements, so the numbers above are from before the fixes.
+
+### Reading real bank exports
+
+The samples above were written for the app, so they say nothing about whether a real bank's file loads. [`eval/formats`](eval/formats) holds made-up statements in the layouts that real banks export, and [`src/engine/formats.test.ts`](src/engine/formats.test.ts) checks each one:
+
+| Layout | What the importer has to get right |
+|---|---|
+| One signed amount column and a "Type" column | "Type" holds bank codes, not debit or credit, so the sign decides. A "Details" column sits next to "Description". |
+| A summary block above the table | The table starts further down; dates are month-first; amounts are in quotes. |
+| No header row | The columns are told apart by what is in them. |
+| Separate debit and credit columns | Day-first dates; sort code and account number columns to ignore. |
+| Withdrawal and deposit columns | The currency is in the header; UPI and NEFT narrations. |
+| Dates written out, or with a time | "Nov 3, 2026", "4 November 2026", "11/05/2026 10:22"; a negative amount in brackets. |
+| Semicolons and a decimal comma | "1.250,00" is one thousand two hundred and fifty. |
+
+An ambiguous date such as 03/04/2026 is settled by the rest of the column (a 13 can only be a day) and otherwise by the currency. Wording used by large US banks is parsed for the payee (person-to-person transfers, card purchases with a store number and city, ACH lines with an originator, wires, transfers to the client's own savings account). Anything the parser does not recognise is still safe: the whole payee text becomes one code.
+
+The same privacy test runs over all of these files as well as the samples: every row is masked as if it were about to be sent, and the result is searched for every word and number of the statement ([`src/engine/privacy.test.ts`](src/engine/privacy.test.ts)).
 
 ## Firebase AI Logic in the code
 

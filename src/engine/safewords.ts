@@ -15,13 +15,33 @@ sent received collected owed owe lent borrowed bought sold ordered booked hired 
 
 export const SAFE_WORDS = new Set(WORDS.split(/\s+/).filter(Boolean).map(w => w.toLowerCase()));
 
-/** Short numbers, quarters, dates and invoice-style codes carry no identity on their own. */
-export function isSafeToken(word: string): boolean {
+/** Words that introduce a document number (an invoice, an order, a cheque): the number after one is not an identity. */
+const DOC_WORDS = new Set(['inv', 'invoice', 'invoices', 'order', 'po', 'receipt', 'job', 'ticket', 'batch', 'quote', 'estimate', 'check', 'chq', 'cheque']);
+
+/** Is `prev` (the word just before a number) a document word such as INV or ORDER? */
+export function isDocWord(prev?: string): boolean {
+  return !!prev && DOC_WORDS.has(prev.toLowerCase().replace(/[^a-z]/g, ''));
+}
+
+/**
+ * Numbers are default-deny too. A number in a note is sent only if it cannot point at a person or
+ * an account: up to three digits (a lot, a unit, a count), a year, or four to six digits right
+ * after a document word ("INV 2231"). The last four digits of a card or an account, a postcode,
+ * a staff number and anything longer are masked.
+ */
+export function isSafeNumber(digits: string, prev?: string): boolean {
+  if (digits.length <= 3) return true;
+  if (digits.length === 4 && +digits >= 1990 && +digits <= 2099) return true;
+  return digits.length <= 6 && isDocWord(prev);
+}
+
+/** Everyday words, short numbers, quarters, dates and invoice-style codes carry no identity on their own. */
+export function isSafeToken(word: string, prev?: string): boolean {
   const w = word.toLowerCase();
   if (SAFE_WORDS.has(w)) return true;
-  if (/^\d{1,6}$/.test(w)) return true; // invoice or lot numbers, amounts
+  if (/^\d+$/.test(w)) return isSafeNumber(w, prev);
   if (/^q[1-4]$/.test(w) || /^\d{1,2}(st|nd|rd|th)$/.test(w)) return true;
   if (/^\d{1,2}[/.-]\d{1,2}([/.-]\d{2,4})?$/.test(w)) return true; // dates
-  if (/^[a-z]{1,4}\d{1,6}$/.test(w) && !/^\d{7,}$/.test(w)) return true; // INV2231, A12
+  if (/^(inv|po|ord|job|lot|unit|fy|wk)[-.]?\d{1,6}$/.test(w) || /^[a-z]\d{1,3}$/.test(w)) return true; // INV2231, FY26, A12
   return false;
 }

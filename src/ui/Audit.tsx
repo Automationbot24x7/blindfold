@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { CATEGORIES, codesFor, label } from '../engine/categories';
 import { REVIEW_INSTRUCTIONS } from '../engine/cloud';
-import { importStatement } from '../engine/csv';
+import { importStatement, LayoutError, suggestColumns, type ColumnMap, type ImportResult } from '../engine/csv';
 import { money, type Currency } from '../engine/detectors';
 import { Audit, type AuditSnapshot, type LedgerEntry, type Stage } from '../engine/pipeline';
+import { selfCheck, statementSecrets, type SelfCheck } from '../engine/proof';
 import type { Finding, Txn } from '../engine/types';
 import { prepareDevice, useDevice, type DeviceStatus } from '../lib/device';
 import { appConfig, loadConfig } from '../lib/remoteConfig';
@@ -11,7 +12,13 @@ import { setReplaying } from '../lib/replayState';
 import { buildFrames, type RecordedRun } from './replay';
 import { SAMPLES, type Sample } from './samples';
 
-interface Meta { title: string; context: string; currency: Currency; period?: string; sample?: string; approvalRule: boolean }
+interface Meta { title: string; context: string; currency: Currency; period?: string; sample?: string; approvalRule: boolean; notes?: string[]; skipped?: number }
+
+/** A statement that has been read (on this computer) and is waiting for its one-line description. */
+interface Pending { name: string; text: string; imported: ImportResult; columns?: ColumnMap }
+
+const CURRENCIES: Currency[] = ['USD', 'EUR', 'GBP', 'INR'];
+const longDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
 
 const CONTEXTS: { label: string; context: string; approvalRule: boolean }[] = [
   { label: 'A small shop, café or trading business', context: 'a small independent shop or trading business', approvalRule: false },
@@ -32,7 +39,8 @@ export function AuditPage() {
   const [cloudOnlyOk, setCloudOnlyOk] = useState(false);
   const [askMode, setAskMode] = useState(false);
   const [error, setError] = useState('');
-  const [pendingFile, setPendingFile] = useState<{ name: string; text: string } | null>(null);
+  const [pendingFile, setPendingFile] = useState<Pending | null>(null);
+  const [mapping, setMapping] = useState<{ name: string; text: string; rows: string[][]; error?: string } | null>(null);
   const [replay, setReplay] = useState<{ recordedAt: string; machine: string } | null>(null);
   const auditRef = useRef<Audit | null>(null);
   const timers = useRef<number[]>([]);
@@ -56,20 +64,39 @@ export function AuditPage() {
     setMeta(null);
   }
 
-  async function start(csv: string, m: Meta) {
+  /** Reads a dropped file on this computer. If its layout cannot be worked out, the person points at the columns. */
+  function openFile(name: string, text: string, columns?: ColumnMap) {
+    setError('');
+    // A statement saved as a spreadsheet or a PDF is not text; say what to do instead of showing gibberish.
+    if (/^%PDF/.test(text)) { setError('That file is a PDF. Download the statement from your bank as a CSV file instead.'); return; }
+    if (/^PK\u0003\u0004/.test(text) || text.slice(0, 2000).includes('\u0000')) { setError('That file is a spreadsheet, not a CSV. Open it and use “Save as CSV”, then drop the CSV here.'); return; }
+    try {
+      const imported = importStatement(text, columns ? { columns } : {});
+      setMapping(null);
+      setPendingFile({ name, text, imported, columns });
+    } catch (e) {
+      // A table needs at least a date, a description and an amount; anything narrower is not a statement.
+      if (e instanceof LayoutError && Math.max(0, ...e.rows.slice(0, 20).map(r => r.length)) < 3) setError('That file does not look like a bank statement: it has no table with dates, descriptions and amounts.');
+      else if (e instanceof LayoutError) setMapping({ name, text, rows: e.rows, error: columns ? e.message : undefined });
+      else if (columns) setMapping(mp => (mp ? { ...mp, error: (e as Error).message } : mp));
+      else setError((e as Error).message);
+    }
+  }
+
+  async function start(imported: ImportResult, m: Meta) {
     setError('');
     try {
-      const imported = importStatement(csv);
       const cfg = await loadConfig();
-      const currency = imported.currency;
+      const currency = m.currency;
       const config = { ...cfg.audit[currency], approvalLimit: m.approvalRule ? cfg.audit[currency].approvalLimit : 0 };
       const audit = new Audit(imported.txns, {
         currency, context: m.context, config, cloudModel: cfg.cloudModel, deviceBatchSize: cfg.deviceBatchSize,
-        deviceAvailable: deviceReady, receiptHead: m.approvalRule ? 'DUE' : 'SAL', onUpdate: setSnap,
+        deviceAvailable: deviceReady, receiptHead: m.approvalRule ? 'DUE' : 'SAL',
+        maxLabelRequests: cfg.maxLabelRequests, maxReviews: cfg.maxReviews, onUpdate: setSnap,
       });
       auditRef.current = audit;
       setReplay(null);
-      setMeta({ ...m, currency });
+      setMeta({ ...m, currency, notes: imported.notes, skipped: imported.skipped });
       setSnap(audit.snapshot);
       setTab('findings');
       await audit.run();
@@ -87,8 +114,12 @@ export function AuditPage() {
   }
 
   async function runSample(s: Sample) {
-    const csv = await (await fetch(`samples/${s.id}.csv`)).text();
-    void start(csv, { title: s.title, context: s.context, currency: 'USD', period: s.period, sample: s.id, approvalRule: s.approvalRule });
+    try {
+      const imported = importStatement(await (await fetch(`samples/${s.id}.csv`)).text());
+      void start(imported, { title: s.title, context: s.context, currency: imported.currency, period: s.period, sample: s.id, approvalRule: s.approvalRule });
+    } catch {
+      setError('That sample statement could not be loaded.');
+    }
   }
 
   async function playRecorded(s: Sample) {
@@ -108,6 +139,12 @@ export function AuditPage() {
     }
   }
 
+  // The headline of the receipt is measured here, in this tab, from the statement and the requests
+  // themselves (also for a recorded run): see engine/proof.ts.
+  const rowCount = snap?.txns.length ?? 0;
+  const secrets = useMemo(() => statementSecrets(snap?.txns ?? []), [rowCount, meta?.title, replay?.recordedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const proof = useMemo(() => selfCheck(secrets, snap?.ledger ?? []), [secrets, snap?.ledger]);
+
   if (!snap || !meta) {
     return (
       <div className="main start">
@@ -118,7 +155,7 @@ export function AuditPage() {
           </div>
         </div>
         {error && <div className="notice warn"><div><h4>Something went wrong</h4><p>{error}</p></div></div>}
-        <DropZone onFile={(name, text) => whenReady(() => setPendingFile({ name, text }))} />
+        <DropZone onFile={openFile} />
         <DeviceStrip status={device.status} progress={device.progress} cloudOnlyOk={cloudOnlyOk} onAskMode={() => setAskMode(true)} onLeaveMode={() => setCloudOnlyOk(false)} />
         <div className="samples-head">
           <h2>Or try a sample statement</h2>
@@ -156,11 +193,29 @@ export function AuditPage() {
           <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">Privacy Policy</a> and{' '}
           <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer">Terms of Service</a> apply.
         </p>
+        {mapping && (
+          <ColumnPicker
+            name={mapping.name} rows={mapping.rows} error={mapping.error}
+            onCancel={() => setMapping(null)}
+            onDone={columns => openFile(mapping.name, mapping.text, columns)}
+          />
+        )}
         {pendingFile && (
           <ContextPicker
-            name={pendingFile.name}
+            name={pendingFile.name} imported={pendingFile.imported}
             onCancel={() => setPendingFile(null)}
-            onPick={ctx => { const f = pendingFile; setPendingFile(null); void start(f.text, { title: f.name.replace(/\.csv$/i, ''), context: ctx.context, currency: 'USD', approvalRule: ctx.approvalRule }); }}
+            onPick={(ctx, currency) => {
+              const f = pendingFile;
+              setPendingFile(null);
+              try {
+                // A different currency can change how an ambiguous date (03/04) is read, so the file is read again.
+                const imported = currency === f.imported.currency ? f.imported : importStatement(f.text, { columns: f.columns, currency });
+                const m = { title: f.name.replace(/\.(csv|tsv|txt)$/i, ''), context: ctx.context, currency, approvalRule: ctx.approvalRule };
+                whenReady(() => void start(imported, m));
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
           />
         )}
         {askMode && (
@@ -178,7 +233,7 @@ export function AuditPage() {
   const flagged = new Set(snap.findings.flatMap(f => f.txnIds));
   return (
     <div className="app">
-      <Rail snap={snap} currency={meta.currency} recorded={!!replay} />
+      <Rail snap={snap} currency={meta.currency} recorded={!!replay} proof={proof} />
       <div className="main">
         {replay && (
           <div className="replay-strip no-print">
@@ -190,12 +245,19 @@ export function AuditPage() {
           <div>
             <h1>{meta.title}</h1>
             <p>{meta.period ? `${meta.period} · ` : ''}{plural(snap.txns.length, 'row')} · {snap.message}</p>
+            {/* how an uploaded file was read (date order, missing header, lines left out) */}
+            {(meta.notes?.length || meta.skipped) ? (
+              <p className="read-note">{meta.notes?.join(' ')}{meta.skipped ? ` ${plural(meta.skipped, 'line')} without a date or an amount ${meta.skipped === 1 ? 'was' : 'were'} left out.` : ''}</p>
+            ) : null}
           </div>
           <div className="no-print">
             <button className="btn" onClick={reset}>New statement</button>
           </div>
         </div>
         {snap.error && <div className="notice warn"><div><h4>The audit stopped</h4><p>{snap.error}</p></div></div>}
+        {!!snap.unlabelled && snap.stage === 'done' && (
+          <div className="notice"><div><h4>{plural(snap.unlabelled, 'payee')} still need a category</h4><p>The cloud {snap.ledger.some(l => l.status === 'failed') ? 'did not answer' : 'limit for one audit was reached'}, so their rows are marked Unsure. Choose a category for them in the ledger; the findings below do not depend on it.</p></div></div>
+        )}
         <div className="tabs">
           <button className={tab === 'findings' ? 'on' : ''} onClick={() => setTab('findings')}>Findings<span className="count">{snap.findings.length}</span></button>
           <button className={tab === 'ledger' ? 'on' : ''} onClick={() => setTab('ledger')}>Ledger<span className="count">{snap.txns.length}</span></button>
@@ -209,9 +271,9 @@ export function AuditPage() {
         )}
         {tab === 'ledger' && <LedgerView snap={snap} currency={meta.currency} flagged={flagged} onEdit={(id, code) => {
           const t = snap.txns.find(x => x.id === id);
-          if (t) { t.category = code; t.categorySource = 'user'; t.categoryReason = 'set by you'; setSnap({ ...snap, txns: [...snap.txns] }); }
+          if (t) { t.category = code; t.categorySource = 'user'; t.categoryReason = 'set by you'; t.unsure = false; setSnap({ ...snap, txns: [...snap.txns] }); }
         }} />}
-        {tab === 'receipt' && <ReceiptView snap={snap} meta={meta} recorded={!!replay} />}
+        {tab === 'receipt' && <ReceiptView snap={snap} meta={meta} recorded={!!replay} proof={proof} />}
       </div>
       {xray && <XRay finding={xray} snap={snap} currency={meta.currency} onClose={() => setXray(null)} />}
     </div>
@@ -233,10 +295,10 @@ function DropZone({ onFile }: { onFile: (name: string, text: string) => void }) 
     >
       <div className="drop-text">
         <h3>Drop a bank statement here</h3>
-        <p>A CSV export from your bank. Date, description and debit/credit (or signed amount) columns are found automatically. The file is read in this tab and never uploaded.</p>
+        <p>A CSV export from your bank. The date, description and amount columns are found automatically, with or without a header row; if they cannot be, you point them out. The file is read in this tab and never uploaded.</p>
       </div>
       <button className="btn primary" onClick={() => input.current?.click()}>Choose a CSV file</button>
-      <input ref={input} type="file" accept=".csv,text/csv" hidden onChange={e => read(e.target.files?.[0])} />
+      <input ref={input} type="file" accept=".csv,.tsv,.txt,text/csv" hidden onChange={e => { read(e.target.files?.[0]); e.target.value = ''; }} />
     </div>
   );
 }
@@ -280,7 +342,7 @@ function ModeModal({ onAccept, onCancel, onDownload, canDownload }: { onAccept: 
           <p style={{ margin: 0 }}>Without the AI built into Chrome, Blindfold still never sends a raw statement. Instead:</p>
           <ul className="plain-list">
             <li>Rows are masked on this computer by rules: names, IDs, phone numbers, and every note word that is not an everyday word.</li>
-            <li>Those masked lines are labelled in the cloud, so the cloud sees more lines than in the normal mode.</li>
+            <li>Those masked lines are labelled in the cloud, so the cloud sees more lines than in the normal mode. It never sees a payee’s name, so its category labels are rougher; the findings come from code and are the same.</li>
             <li>There is no on-device leak guard. Every request is still listed word for word on the privacy receipt.</li>
           </ul>
           {canDownload && <p style={{ margin: 0 }}>This Chrome can also download the on-device AI (one time, about 4 GB) for the full private mode.</p>}
@@ -295,14 +357,74 @@ function ModeModal({ onAccept, onCancel, onDownload, canDownload }: { onAccept: 
   );
 }
 
-function ContextPicker({ name, onPick, onCancel }: { name: string; onPick: (c: (typeof CONTEXTS)[number]) => void; onCancel: () => void }) {
+function ContextPicker({ name, imported, onPick, onCancel }: { name: string; imported: ImportResult; onPick: (c: (typeof CONTEXTS)[number], currency: Currency) => void; onCancel: () => void }) {
+  const [currency, setCurrency] = useState<Currency>(imported.currency);
   return (
     <div className="modal-back" onClick={onCancel}>
-      <div className="modal" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: 600 }} onClick={e => e.stopPropagation()}>
         <div className="modal-head"><h3>Whose statement is “{name}”?</h3><button className="btn sm" onClick={onCancel}>Close</button></div>
         <div className="modal-body">
-          <p className="muted" style={{ margin: 0 }}>A short description (no names) that helps label rows. It is the only context that travels with masked lines.</p>
-          {CONTEXTS.map(c => <button key={c.label} className="btn" style={{ justifyContent: 'space-between' }} onClick={() => onPick(c)}>{c.label}</button>)}
+          {/* what the importer made of the file, so a wrong reading is caught before the audit, not after */}
+          <div className="read-as">
+            <p><b>{plural(imported.txns.length, 'transaction')}</b>, {longDate(imported.from)} to {longDate(imported.to)}{imported.skipped > 0 && <>; {plural(imported.skipped, 'line')} without a date or an amount left out</>}.</p>
+            {imported.notes.map(n => <p key={n} className="muted">{n}</p>)}
+            <div className="read-currency">
+              <span className="muted">Currency</span>
+              <div className="seg">{CURRENCIES.map(c => <button key={c} className={c === currency ? 'on' : ''} onClick={() => setCurrency(c)}>{c}</button>)}</div>
+            </div>
+          </div>
+          <p className="muted" style={{ margin: 0 }}>Pick a short description (no names) that helps label rows. It is the only context that travels with masked lines.</p>
+          {CONTEXTS.map(c => <button key={c.label} className="btn" style={{ justifyContent: 'space-between' }} onClick={() => onPick(c, currency)}>{c.label}</button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ROLES: [string, string][] = [['', 'Not used'], ['date', 'Date'], ['narration', 'Description'], ['amount', 'Amount (minus = out)'], ['debit', 'Money out'], ['credit', 'Money in'], ['balance', 'Balance']];
+
+/** Shown only when the layout of a file cannot be worked out: the person says which column is which. */
+function ColumnPicker({ name, rows, error, onDone, onCancel }: { name: string; rows: string[][]; error?: string; onDone: (c: ColumnMap) => void; onCancel: () => void }) {
+  const preview = rows.slice(0, 8);
+  const width = Math.max(1, ...preview.map(r => r.length));
+  const [roles, setRoles] = useState<string[]>(() => {
+    // start from whatever can be recognised (usually the dates and the money), so only the rest is left to choose
+    const start = Array.from({ length: width }, () => '');
+    for (const [k, i] of Object.entries(suggestColumns(rows))) if (typeof i === 'number' && i < width) start[i] = k;
+    return start;
+  });
+  // one column per role: choosing a role somewhere takes it away from wherever it was
+  const choose = (col: number, role: string) => setRoles(rs => rs.map((r, i) => (i === col ? role : role && r === role ? '' : r)));
+  const at = (role: string) => { const i = roles.indexOf(role); return i >= 0 ? i : undefined; };
+  const date = at('date'), narration = at('narration');
+  const ready = date !== undefined && narration !== undefined && (at('amount') !== undefined || at('debit') !== undefined || at('credit') !== undefined);
+  return (
+    <div className="modal-back" onClick={onCancel}>
+      <div className="modal" style={{ width: 920 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-head"><h3>Which column is which in “{name}”?</h3><button className="btn sm" onClick={onCancel}>Close</button></div>
+        <div className="modal-body">
+          <p style={{ margin: 0 }}>The columns of this file could not be told apart. Choose the date, the description and the amount above the first rows below. Nothing has left this computer.</p>
+          <div className="map-scroll">
+            <table className="map">
+              <thead>
+                <tr>{roles.map((r, i) => (
+                  <th key={i}>
+                    <select value={r} onChange={e => choose(i, e.target.value)} aria-label={`Column ${i + 1}`}>
+                      {ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                  </th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {preview.map((r, k) => <tr key={k}>{roles.map((_, i) => <td key={i} title={r[i] ?? ''}>{r[i] ?? ''}</td>)}</tr>)}
+              </tbody>
+            </table>
+          </div>
+          {error && <div className="notice warn"><div><h4>Those columns did not work</h4><p>{error}</p></div></div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button className="btn" onClick={onCancel}>Cancel</button>
+            <button className="btn primary" disabled={!ready} onClick={() => onDone({ date: date!, narration: narration!, amount: at('amount'), debit: at('debit'), credit: at('credit'), balance: at('balance') })}>Read the file</button>
+          </div>
         </div>
       </div>
     </div>
@@ -321,7 +443,7 @@ const STAGES: { id: Stage; label: string; hint: string }[] = [
   { id: 'done', label: 'Report ready', hint: 'names restored locally' },
 ];
 
-function Rail({ snap, currency, recorded }: { snap: AuditSnapshot; currency: Currency; recorded: boolean }) {
+function Rail({ snap, currency, recorded, proof }: { snap: AuditSnapshot; currency: Currency; recorded: boolean; proof: SelfCheck }) {
   const cur = STAGES.map(s => s.id).indexOf(snap.stage === 'error' ? 'done' : snap.stage);
   const n = Math.max(1, snap.txns.length);
   const by = (s: string) => snap.txns.filter(t => t.categorySource === s).length;
@@ -368,7 +490,8 @@ function Rail({ snap, currency, recorded }: { snap: AuditSnapshot; currency: Cur
       </dl>
       <h4>What left {recorded ? 'the laptop' : 'this device'}</h4>
       <dl className="kv">
-        <div className="good"><dt>Raw names, IDs, account numbers</dt><dd>0</dd></div>
+        {/* measured: every request is searched for every name, word and number of the statement (engine/proof.ts) */}
+        <div className={proof.found.length ? 'bad' : 'good'} title={`Searched for ${proof.searchedFor} names, words and numbers from the statement`}><dt>Raw names, IDs, account numbers</dt><dd>{proof.found.length}</dd></div>
         <div><dt>Masked lines</dt><dd>{sentLines}</dd></div>
         <div><dt>Placeholders in them</dt><dd>{tokens.all}</dd></div>
         <div><dt>Requests sent</dt><dd>{sent.length}</dd></div>
@@ -422,7 +545,7 @@ function FindingsView({ snap, currency, onXray, onRetry }: { snap: AuditSnapshot
                   <div className="kind">{KIND[f.kind]} · {f.severity} priority</div>
                   <h3>{f.title}</h3>
                 </div>
-                <span className={`verdict ${f.review ? f.review.verdict : 'pending'}`}>{f.review ? VERDICT[f.review.verdict] : f.reviewStatus === 'failed' ? 'Review failed' : f.reviewStatus === 'blocked' ? 'Blocked' : 'Reviewing…'}</span>
+                <span className={`verdict ${f.review ? f.review.verdict : 'pending'}`}>{f.review && f.reviewStatus !== 'pending' ? VERDICT[f.review.verdict] : f.reviewStatus === 'failed' ? 'Review failed' : f.reviewStatus === 'blocked' ? 'Not sent' : f.reviewStatus === 'skipped' ? 'Not reviewed yet' : 'Reviewing…'}</span>
               </header>
               <p className="facts-line">{Object.entries(f.facts).map(([k, v], i) => <span key={k}>{i > 0 && ' · '}{FACT_LABEL[k] ?? k} <b className="num">{String(v)}</b></span>)}</p>
               <table className="mini">
@@ -443,14 +566,17 @@ function FindingsView({ snap, currency, onXray, onRetry }: { snap: AuditSnapshot
                   <p className="q"><b>Ask the client:</b> {f.review.clientQuestion}</p>
                 </div>
               )}
+              {!f.review && f.reviewStatus === 'failed' && <p className="review-miss">The blind review did not come back. {f.reviewError}</p>}
+              {!f.review && f.reviewStatus === 'blocked' && <p className="review-miss">This was not sent: something from the statement was still readable after masking, so the request was stopped.</p>}
+              {!f.review && f.reviewStatus === 'skipped' && <p className="review-miss">Code found this pattern. To spare the shared free cloud quota, only the most serious findings are reviewed automatically.</p>}
               <footer>
                 {f.review && (f.review.source === 'in_cloud'
                   ? <span className="src cloud">Reviewed blind in the cloud · {(f.review.ms / 1000).toFixed(1)} s</span>
                   : <span className="src device" title={f.review.model}>On-device draft{f.review.model?.includes('(') ? ` · ${f.review.model.split('(')[1].replace(')', '')}` : ''}</span>)}
                 <span className="src rule">Numbers from code</span>
                 <span style={{ flex: 1 }} />
-                {onRetry && f.review?.source === 'on_device' && f.reviewStatus !== 'pending' && (
-                  <button className="btn sm" onClick={() => onRetry(f.id)}>Ask the cloud again</button>
+                {onRetry && f.reviewStatus !== 'pending' && (f.review?.source === 'on_device' || f.reviewStatus === 'failed' || f.reviewStatus === 'skipped') && (
+                  <button className="btn sm" onClick={() => onRetry(f.id)}>{f.reviewStatus === 'skipped' ? 'Review blind' : f.reviewStatus === 'failed' ? 'Try again' : 'Ask the cloud again'}</button>
                 )}
                 {f.sentText && <button className="btn sm strong" onClick={() => onXray(f)}>See what the cloud saw</button>}
               </footer>
@@ -576,6 +702,7 @@ function LedgerView({ snap, currency, flagged, onEdit }: { snap: AuditSnapshot; 
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<LedgerFilter>('all');
   const [toast, setToast] = useState('');
+  const settled = snap.stage === 'done' || snap.stage === 'error'; // rows nobody could label can then be labelled by hand
   const flagsOf = useMemo(() => {
     const m = new Map<number, string[]>();
     for (const f of snap.findings) for (const id of f.txnIds) m.set(id, [...new Set([...(m.get(id) ?? []), FLAG[f.kind] ?? 'Flagged'])]);
@@ -616,9 +743,10 @@ function LedgerView({ snap, currency, flagged, onEdit }: { snap: AuditSnapshot; 
                 <td className="narr"><span className="cp">{t.counterparty || '—'}</span>{(flagsOf.get(t.id) ?? []).map(x => <mark key={x}>{x}</mark>)}<span className="raw" title={t.narration}>{t.narration}</span></td>
                 <td className="amt">{t.direction === 'out' ? money(t.amount, currency) : ''}</td>
                 <td className="amt in">{t.direction === 'in' ? money(t.amount, currency) : ''}</td>
-                <td className={t.category && !t.unsure ? 'cat' : undefined}>
-                  {t.category && !t.unsure
-                    ? <select value={t.category} onChange={e => { onEdit(t.id, e.target.value); setToast(`${t.counterparty || 'Row'} → ${label(e.target.value)}`); }} aria-label="Category">
+                <td className={(t.category && !t.unsure) || settled ? 'cat' : undefined}>
+                  {(t.category && !t.unsure) || settled
+                    ? <select value={t.category && !t.unsure ? t.category : ''} onChange={e => { if (!e.target.value) return; onEdit(t.id, e.target.value); setToast(`${t.counterparty || 'Row'} → ${label(e.target.value)}`); }} aria-label="Category">
+                        {!(t.category && !t.unsure) && <option value="">Unsure: choose…</option>}
                         {CATEGORIES.filter(c => codesFor(t.direction).includes(c.code) && c.code !== 'UNS').map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
                       </select>
                     : <span className="muted">{t.unsure ? 'Unsure' : '—'}</span>}
@@ -637,25 +765,40 @@ function LedgerView({ snap, currency, flagged, onEdit }: { snap: AuditSnapshot; 
 
 /* ------------------------------------------------------------------ receipt */
 
-function ReceiptView({ snap, meta, recorded }: { snap: AuditSnapshot; meta: Meta; recorded?: boolean }) {
+function ReceiptView({ snap, meta, recorded, proof }: { snap: AuditSnapshot; meta: Meta; recorded?: boolean; proof: SelfCheck }) {
   const sent = snap.ledger.filter(l => l.status === 'sent');
   const tokens = sentTokens(snap);
   const masked = tokens.text + snap.guardCatches.length;
+  const lastCheck = snap.ledger.reduce((n, l) => n + (l.lastCheck?.length ?? 0), 0);
+  const where = recorded ? 'the recording laptop' : 'this device';
   const summary = useMemo(() => ({
     statement: meta.title, generated: new Date().toISOString(), recordedRunReplay: !!recorded, rows: snap.txns.length,
     rowsReadOnDevice: snap.txns.filter(t => t.categorySource === 'device' || t.categorySource === 'memory').length,
     rowsByRules: snap.txns.filter(t => t.categorySource === 'rule').length,
-    requestsSent: sent.length, rawIdentifiersSent: 0, placeholdersSent: tokens.all, unknownNoteWordsMasked: masked,
+    requestsSent: sent.length, rawIdentifiersSent: proof.found.length, placeholdersSent: tokens.all, unknownNoteWordsMasked: masked,
+    // measured in the browser from the statement and the requests: how many of the statement's own words and numbers were searched for, and what was found
+    selfCheck: { searchedFor: proof.searchedFor, requestsSearched: proof.requests, found: proof.found.length },
+    maskedByLastCheck: lastCheck, leakGuardLinesSkipped: snap.guardSkipped ?? 0,
     requests: snap.ledger.map(l => ({ time: l.at, purpose: l.purpose, status: l.status, ranOn: l.source, model: l.model, placeholders: l.placeholders, text: l.text })),
-  }), [snap, meta, sent.length, recorded, tokens.all, masked]);
+  }), [snap, meta, sent.length, recorded, tokens.all, masked, proof, lastCheck]);
   return (
     <>
       <div className="receipt-summary">
-        <div className="stat zero"><b>0</b><span>raw names, IDs or account numbers sent</span></div>
+        <div className={`stat zero${proof.found.length ? ' bad' : ''}`}><b>{proof.found.length}</b><span>raw names, IDs or account numbers sent</span></div>
         <div className="stat"><b>{sent.length}</b><span>{sent.length === 1 ? 'request' : 'requests'} left {recorded ? 'the laptop' : 'this device'}</span></div>
         <div className="stat"><b>{tokens.all}</b><span>placeholders standing in for names and IDs</span></div>
         <div className="stat"><b>{masked}</b><span>{masked === 1 ? 'unknown note word' : 'unknown note words'} masked by default</span></div>
       </div>
+      {/* the first number above is a measurement made in this tab, not a promise */}
+      <p className="proof-line">
+        <b>Checked, not assumed.</b>{' '}
+        {proof.requests === 0
+          ? `Once a request leaves ${where}, it is searched here for every name, word and number in the statement that is not an everyday word.`
+          : <>Every request that left {where} was searched just now for every name, word and number in this statement that is not an everyday word: <b>{proof.searchedFor}</b> in all. {proof.found.length === 0 ? `None of them is in any of the ${plural(proof.requests, 'request')}.` : `${plural(proof.found.length, 'match', 'matches')} found, listed below.`}</>}
+      </p>
+      {proof.found.length > 0 && (
+        <div className="notice warn"><div><h4>Something from the statement was sent unmasked</h4><p>{proof.found.map(f => `request ${f.request}: “${f.value}”`).join(', ')}</p></div></div>
+      )}
       <div className="receipt-actions no-print">
         <button className="btn sm" onClick={() => window.print()}>Print or save as PDF</button>
         <button className="btn sm" onClick={() => download('privacy-receipt.json', JSON.stringify(summary, null, 2), 'application/json')}>Download receipt (JSON)</button>
@@ -664,7 +807,13 @@ function ReceiptView({ snap, meta, recorded }: { snap: AuditSnapshot; meta: Meta
         {recorded ? 'Recorded run: the requests that left the recording laptop' : 'Every request that left this device'} during the audit of <b>{meta.title}</b>, word for word. Placeholders stand in for people, businesses, phone numbers, payment IDs, account and reference numbers. The table that maps them back to names never left the browser.
       </p>
       {snap.guardCatches.length > 0 && (
-        <div className="notice device"><div><h4>The on-device leak guard masked {plural(snap.guardCatches.length, 'more word')}</h4><p>{snap.guardCatches.map(g => `“${g.text}”`).join(', ')} were masked before anything was sent.</p></div></div>
+        <div className="notice device"><div><h4>The on-device leak guard masked {plural(snap.guardCatches.length, 'more word')}</h4><p>{snap.guardCatches.map(g => `“${g.text}”`).join(', ')} {snap.guardCatches.length === 1 ? 'was' : 'were'} masked before anything was sent.</p></div></div>
+      )}
+      {lastCheck > 0 && (
+        <div className="notice device"><div><h4>The last check before sending masked {plural(lastCheck, 'more item')}</h4><p>They matched something read from the statement, so they were replaced by placeholders before the request left.</p></div></div>
+      )}
+      {!!snap.guardSkipped && (
+        <div className="notice"><div><h4>The on-device leak guard could not re-read {plural(snap.guardSkipped, 'line')}</h4><p>The built-in model did not answer. Those lines were masked by rules, and the last check before sending still ran on them.</p></div></div>
       )}
       {snap.ledger.map((l: LedgerEntry) => (
         <details key={l.id} className="ledger-entry">
@@ -673,7 +822,7 @@ function ReceiptView({ snap, meta, recorded }: { snap: AuditSnapshot; meta: Meta
             <span className="p">{l.purpose}</span>
             {l.status === 'sent' && (l.source === 'in_cloud' ? <span className="src cloud">Cloud · {l.model}</span> : <span className="src device">Answered on device</span>)}
             {l.status === 'failed' && <span className="src none">Failed: {l.error?.slice(0, 60)}</span>}
-            {l.status === 'blocked' && <span className="src none">Blocked before sending</span>}
+            {l.status === 'blocked' && <span className="src none">Stopped before sending</span>}
             <span className="muted" style={{ fontSize: 12.5 }}>{plural(l.placeholders, 'placeholder')}</span>
           </summary>
           <Payload text={l.text} />
