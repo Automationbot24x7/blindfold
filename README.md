@@ -4,7 +4,7 @@
 
 Blindfold is a second pair of eyes for bank statements, built for one-person bookkeeping practices, volunteer treasurers and small nonprofits. Chrome's built-in AI reads the raw statement on your computer and swaps every name, phone number and account number for a code. Plain code finds the patterns an auditor looks for and does every sum. Only masked lines go to a larger cloud model, through Firebase AI Logic, for a blind review. The answers come back in codes, the names are put back on your computer, and every word that left is listed on a privacy receipt.
 
-**Live app:** https://blindfold-audit.web.app &nbsp;·&nbsp; **Demo video:** https://youtu.be/UWM-k9jvhVc &nbsp;·&nbsp; **License:** Apache-2.0
+**Live app:** https://blindfold-audit.web.app &nbsp;·&nbsp; **Demo video:** https://youtu.be/i59wgR2C2fY &nbsp;·&nbsp; **License:** Apache-2.0
 
 ![Blindfold: audit the money, not the names. A real sample statement where every payee name is covered by label tape printed with its code, and a red thread links PERSON_1 to BUSINESS_12](docs/banner.jpg)
 
