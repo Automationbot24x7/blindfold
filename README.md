@@ -6,7 +6,7 @@ Blindfold is a second pair of eyes for bank statements, built for one-person boo
 
 **Live app:** https://blindfold-audit.web.app &nbsp;·&nbsp; **Demo video:** https://youtu.be/UWM-k9jvhVc &nbsp;·&nbsp; **License:** Apache-2.0
 
-![Blindfold: the cloud finds the red flags, it never sees a name. A bank statement with names covered by black tape and red thread linking matching lines](docs/banner.jpg)
+![Blindfold: audit the money, not the names. A real sample statement where every payee name is covered by label tape printed with its code, and a red thread links PERSON_1 to BUSINESS_12](docs/banner.jpg)
 
 ## Try it
 
@@ -14,6 +14,8 @@ Open **https://blindfold-audit.web.app**, choose **Audit**, and pick a sample st
 
 - **With Chrome's built-in AI** (desktop Chrome 139 or newer on [supported hardware](https://developer.chrome.com/docs/ai/get-started)): choose **Run on this computer**. The first time, Chrome downloads the model once (about 4 GB); the app asks before starting that download, and its status line shows whether the model is ready.
 - **Without it:** choose **Watch a recorded run** to replay a real audit recorded on a laptop that has the built-in model (always labelled as a recording), or choose **Run on this computer** and accept the **masked cloud-only mode**. In that mode rows are masked by rules on your computer first, and the cloud labels the masked lines.
+- **Try to slip a name past it:** on the home page, type any bank line and watch the masking and the last check run in the page, or switch the masking off and watch the check stop the request. No model and no network involved.
+- **After an audit:** "Client workpaper" gives a printable page with each red flag, its numbers, the question for the client (names restored) and room for the answer, plus the privacy check line.
 - **Your own statement:** drop a CSV export from your bank. The date, description and amount columns are worked out from the file, with or without a header row (US, UK, European and Indian layouts; see [Reading real bank exports](#reading-real-bank-exports)). The app shows how it read the file before the audit starts, and if it cannot tell the columns apart, you point at them. The file is read in the browser tab and never uploaded.
 
 ## The problem
@@ -52,9 +54,9 @@ This is what sets Blindfold apart from tools that redact a document and ask one 
 
 ![Every name becomes a code, the pattern stays visible: three findings from the café sample, raw on the left, as the cloud reads them on the right](docs/codes-keep-the-pattern.png)
 
-Rows that need no second look are never sent at all. The X-ray view shows all four steps for any finding, with your computer on the left of the red line and the cloud on the right:
+Rows that need no second look are never sent at all. The "What the cloud saw" view shows all four steps for any finding, with your computer on the left of the red line and the cloud on the right:
 
-![The X-ray of a finding: what stayed on the computer, exactly what was sent, the answer as it came back, and the answer with names put back](docs/xray.png)
+![What the cloud saw, for one finding: what stayed on the computer, exactly what was sent, the answer as it came back, and the answer with names put back](docs/xray.png)
 
 ## Privacy safeguards
 
