@@ -156,7 +156,9 @@ export class Vault {
 
   /** Swap placeholders back to real values. Only ever runs in the browser. */
   restore(text: string): string {
-    return text.replace(/\[([A-Z]+)_(\d+)\]/g, m => this.tokenToValue.get(m) ?? m);
+    // Models often drop the square brackets ("how PERSON_1 and BUSINESS_12 are connected"); a bare code that
+    // this vault issued is put back too. Anything that only looks like a code is left alone.
+    return text.replace(/\[([A-Z]+)_(\d+)\]|\b([A-Z]+)_(\d+)\b/g, m => this.tokenToValue.get(m.startsWith('[') ? m : `[${m}]`) ?? m);
   }
 
   valueOf(token: string): string | undefined {

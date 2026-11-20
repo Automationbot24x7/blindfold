@@ -16,9 +16,30 @@ export interface Frame { delay: number; snap: AuditSnapshot }
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
+/**
+ * Recordings made before 2026-11-21 put names back only where the model kept the square brackets, so an
+ * answer such as "how PERSON_1 and BUSINESS_12 are connected" stayed coded. The codes of each finding are
+ * in its recorded request, one row per transaction, so the names are put back again from those rows.
+ */
+export function restoreRecordedNames(s: AuditSnapshot): void {
+  for (const f of s.findings) {
+    if (!f.review || !f.sentText) continue;
+    const rows = f.sentText.split('\n').filter(l => l.startsWith('- '));
+    const names = new Map<string, string>();
+    rows.forEach((line, k) => {
+      const t = s.txns.find(x => x.id === f.txnIds[k]);
+      const code = line.match(/\[((?:PERSON|BUSINESS)_\d+)\]/)?.[1];
+      if (t?.counterparty && code) names.set(code, t.counterparty);
+    });
+    const put = (text: string) => text.replace(/\[?\b((?:PERSON|BUSINESS)_\d+)\b\]?/g, (m, code: string) => names.get(code) ?? m);
+    f.review = { ...f.review, explanation: put(f.review.maskedExplanation), clientQuestion: put(f.review.maskedClientQuestion) };
+  }
+}
+
 /** Rebuild the audit's progress from its final state, stage by stage, for an honest replay. */
 export function buildFrames(final: AuditSnapshot): Frame[] {
   const f = clone(final);
+  restoreRecordedNames(f);
   const frames: Frame[] = [];
   const base = (): AuditSnapshot => ({ ...f, txns: f.txns.map(t => ({ ...t })), findings: [], ledger: [], deviceCalls: [], guardCatches: [], stage: 'rules', message: 'Applying deterministic rules', error: undefined });
 

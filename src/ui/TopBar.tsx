@@ -5,7 +5,7 @@ const StatusRow = lazy(() => import('./Status'));
 export function TopBar({ route }: { route: string }) {
   return (
     <header className={`topbar${route === '/audit' ? ' wide' : ''}`}>
-      <a className="brand" href="#/">Blindfold</a>
+      <a className="brand" href="#/"><img src="favicon.svg" alt="" width="22" height="22" />Blindfold</a>
       <nav>
         <a href="#/">Overview</a>
         <a href="#/how">How it works</a>

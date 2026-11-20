@@ -1,12 +1,16 @@
 import { ArrowRight } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FEED, type FeedRow } from './feed';
+
+// the masking playground loads after the page, so the first screen stays light
+const LeakTest = lazy(() => import('./LeakTest'));
 
 /* Placeholder codes have a fixed width per type, so a bar never hints at how long the hidden name is. */
 const BAR_W: Record<string, number> = { BUSINESS: 104, PERSON: 84, PHONE: 76, WORD: 68 };
 const VISIBLE = 5; // statement lines on screen at once
-const FIRST = 0; // start on a line that never leaves, then the double payment
+const FIRST = 4; // open on the money that went out to a person and came back from his company
 const STEP_MS = 3400; // a new transaction arrives this often
+const HOLD_MS = 8000; // ...except on the opening view, which carries the thread
 const SLIDE_MS = 520;
 
 function Bar({ code, d }: { code: string; d: number }) {
@@ -20,13 +24,15 @@ function useStatementTicker(paused: boolean) {
   const [sliding, setSliding] = useState(false);
   useEffect(() => {
     if (paused || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // The view that opens on the linked pair (out to a person, back from his company) stays up longer.
+    const hold = start % FEED.length === FIRST ? HOLD_MS : STEP_MS;
     let t2 = 0;
-    const t1 = window.setInterval(() => {
+    const t1 = window.setTimeout(() => {
       setSliding(true);
       t2 = window.setTimeout(() => { setStart(s => s + 1); setSliding(false); }, SLIDE_MS);
-    }, STEP_MS);
-    return () => { clearInterval(t1); clearTimeout(t2); };
-  }, [paused]);
+    }, hold);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [paused, start]);
   // Absolute positions as keys, so rows already on screen never re-mount (only the new one animates in).
   const rows = Array.from({ length: VISIBLE }, (_, k) => ({ key: start + k, row: FEED[(start + k) % FEED.length], d: start + k - FIRST < VISIBLE ? (start + k - FIRST) * 90 : 0 }));
   return { rows, sliding };
@@ -36,7 +42,7 @@ function useStatementTicker(paused: boolean) {
 function Pair({ r, d }: { r: FeedRow; d: number }) {
   const amount = <span className="a">{r.dir === 'IN' ? '+' : '−'}{r.amount}</span>;
   return (
-    <div className="cmp-pair" style={{ ['--d' as string]: `${d}ms` }}>
+    <div className="cmp-pair" data-link={r.link} style={{ ['--d' as string]: `${d}ms` }}>
       <div className="cmp-row">
         <span className="d">{r.date}</span>
         {/* single tokens such as a phone number never break across lines; names wrap between words */}
@@ -85,6 +91,28 @@ function Comparison() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [rows[0].key]);
+  // A red thread pinned to the two codes that code on the computer linked (same surname): the names are
+  // hidden, the link is not. Drawn whenever both rows are on screen.
+  const [thread, setThread] = useState<{ d: string; a: [number, number]; b: [number, number]; key: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    const draw = () => {
+      const bars = [...el.querySelectorAll<HTMLElement>('.cmp-pair[data-link="rt"] .cmp-row.cloud .bar')];
+      if (bars.length < 2) { setThread(null); return; }
+      const box = el.getBoundingClientRect();
+      // from the bottom of the first code to the top of the second, pinned at both ends
+      const [r1, r2] = bars.slice(0, 2).map(b => b.getBoundingClientRect());
+      const p: [number, number] = [r1.left - box.left + r1.width / 2, r1.bottom - box.top];
+      const q: [number, number] = [r2.left - box.left + r2.width / 2, r2.top - box.top];
+      const mid = (p[1] + q[1]) / 2;
+      setThread({ d: `M ${p[0]} ${p[1]} C ${p[0] + 14} ${mid}, ${q[0] - 14} ${mid}, ${q[0]} ${q[1]}`, a: p, b: q, key: rows[0].key });
+    };
+    draw();
+    const ro = new ResizeObserver(draw);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rows[0].key]);
   return (
     <div className="cmp" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <div className="cmp-head">
@@ -95,12 +123,19 @@ function Comparison() {
       <div className="cmp-win" style={{ height }}>
         <div ref={list} className={`cmp-list${sliding ? ' sliding' : ''}`} style={sliding ? { transform: `translateY(-${lift}px)` } : undefined}>
           {rows.map(({ key, row, d }) => <Pair key={key} r={row} d={d} />)}
+          {thread && (
+            <svg className="cmp-thread" key={thread.key} aria-hidden>
+              <path d={thread.d} pathLength={1} />
+              <circle cx={thread.a[0]} cy={thread.a[1]} r={4.5} />
+              <circle cx={thread.b[0]} cy={thread.b[1]} r={4.5} />
+            </svg>
+          )}
         </div>
       </div>
       <div className="cmp-foot">
         <span className="mono">hollis-pine-oct.csv · 66 rows · made-up café</span>
         <span aria-hidden />
-        <span><span className="bar static">BUSINESS_6</span> = the 6th business in this statement, so a double payment still shows. The grey line is the category the on-device AI gave the row. Enough to judge the pattern, never who it is.</span>
+        <span>Two names, two codes, one red thread: code on your computer saw that <span className="bar static">PERSON_1</span> and <span className="bar static">BUSINESS_12</span> share a surname and sends only that fact, so the cloud can still ask how they are connected. The grey line is the category the on-device AI gave the row.</span>
       </div>
     </div>
   );
@@ -124,38 +159,50 @@ function HowItWorks() {
       <div className="sw-sec-head">
         <span className="n">How it works</span>
         <h2>Raw text stays on your side of the line.</h2>
-        <p>Small practices need a second pair of eyes on every statement. They cannot afford audit software, and they should not upload a client’s bank data anywhere. So Blindfold splits the work at a privacy boundary.</p>
+        <p>Small practices need a second pair of eyes on every statement. They cannot afford audit software, and they should not upload a client’s bank data anywhere. So Blindfold splits the work at a privacy boundary, and follows one case all the way through.</p>
       </div>
-      {/* The examples are the real line sent and the real answer returned in the recorded café run. */}
+      {/* The examples are the real lines sent and the real answer returned in the recorded café run (the round trip). */}
       <div className="spine">
         <div className="spine-hd"><span>Your computer</span><span className="ln">Privacy boundary</span><span>The cloud</span></div>
         <div className="spine-row">
           <div className="step">
-            <h3><span className="n">01</span>Read and check</h3>
-            <p>The built-in AI labels every payee. Plain code finds double payments, money that comes back, and cash just under a reporting limit, and does every sum.</p>
-            <div className="snip">08 Oct −$1,845.00 ACH debit <b>HARBORVIEW BAKERY SUPPLY</b> INV 2231 <mark>Paid twice</mark></div>
+            <img className="step-art" src="art/step-01.jpg" alt="" loading="lazy" width="132" height="132" />
+            <div>
+              <h3><span className="n">01</span>Read and check</h3>
+              <p>The built-in AI labels every payee. Plain code finds double payments, money that comes back, cash just under a reporting limit, and does every sum. Here it also sees that both names share a surname.</p>
+              <div className="snip">12 Oct −$7,500.00 Instant pay to <b>DANIEL REYES</b> · ADVANCE<br />15 Oct +$7,500.00 Wire in from <b>REYES CONSTRUCTION LLC</b> · RETURN <mark>Same surname</mark></div>
+            </div>
           </div>
           <div className="spine-ln" />
           <div className="idle">No network call. Stays on your computer.</div>
         </div>
         <div className="spine-row">
           <div className="step">
-            <h3><span className="n">02</span>Mask, then check again</h3>
-            <p>Names, account and phone numbers become numbered codes. A note word that is not an everyday word is masked too. The built-in AI re-reads anything about to leave.</p>
-            <div className="snip"><span className="cap">The line as sent</span>2026-10-08 OUT $1,845.00 via ACH <span className="bar static">BUSINESS_6</span> (business) note: "INV 2231" category: Purchases &amp; suppliers</div>
+            <img className="step-art" src="art/step-02.jpg" alt="" loading="lazy" width="132" height="132" />
+            <div>
+              <h3><span className="n">02</span>Mask, then check again</h3>
+              <p>Every name becomes a code that stays the same across the statement. Unknown note words are masked too, the built-in AI re-reads what is about to leave, and code searches it for the statement’s own names.</p>
+              <div className="snip"><span className="cap">The lines as sent (category left out)</span>2026-10-12 OUT $7,500.00 via TRANSFER <span className="bar static">PERSON_1</span> (person) note: "ADVANCE"<br />2026-10-15 IN $7,500.00 via WIRE <span className="bar static">BUSINESS_12</span> (business) note: "RETURN"<br /><span className="fact">whoSentItBack: a different party whose name contains the same surname or brand word</span></div>
+            </div>
           </div>
           <div className="spine-ln"><span className="cross">Masked lines →</span><span className="cross">← Coded answers</span></div>
           <div className="step">
-            <h3><span className="n">03</span>Blind review</h3>
-            <p>A larger cloud model judges each pattern from codes, amounts and dates, and drafts a question for the client. If the cloud is busy or you are offline, the built-in AI drafts it instead, and says so.</p>
-            <div className="snip"><span className="cap">Likely issue · the cloud’s question</span>Did <span className="bar static">BUSINESS_6</span> confirm this second payment of $1,845.00 was a mistake and agree to refund it?</div>
+            <img className="step-art" src="art/step-03.jpg" alt="" loading="lazy" width="132" height="132" />
+            <div>
+              <h3><span className="n">03</span>Blind review</h3>
+              <p>A larger cloud model judges the pattern from codes, amounts, dates and that one fact, and drafts a question for the client. If the cloud is busy or you are offline, the built-in AI drafts it instead, and says so.</p>
+              <div className="snip"><span className="cap">Ask the client · the cloud’s question</span>Could you tell me how <span className="bar static">PERSON_1</span> and <span className="bar static">BUSINESS_12</span> are connected, and what this advance and return were for?</div>
+            </div>
           </div>
         </div>
         <div className="spine-row">
           <div className="step">
-            <h3><span className="n">04</span>Names back, receipt ready</h3>
-            <p>Your computer puts the names back into every answer and prints a receipt of each word that left, ready to hand to the client.</p>
-            <div className="snip"><span className="cap">For the client</span>Did <b>HARBORVIEW BAKERY SUPPLY</b> confirm this second payment of $1,845.00 was a mistake and agree to refund it?</div>
+            <img className="step-art" src="art/step-04.jpg" alt="" loading="lazy" width="132" height="132" />
+            <div>
+              <h3><span className="n">04</span>Names back, receipt ready</h3>
+              <p>Your computer puts the names back into every answer and prints a receipt of each word that left, ready to hand to the client.</p>
+              <div className="snip"><span className="cap">For the client</span>Could you tell me how <b>DANIEL REYES</b> and <b>REYES CONSTRUCTION LLC</b> are connected, and what this advance and return were for?</div>
+            </div>
           </div>
           <div className="spine-ln" />
           <div className="idle">No network call. Stays on your computer.</div>
@@ -181,6 +228,8 @@ export function Landing() {
       </section>
 
       <HowItWorks />
+
+      <Suspense fallback={null}><LeakTest /></Suspense>
 
       <section className="sw-faq">
         <div className="sw-sec-head"><span className="n">Questions</span><h2>What a careful bookkeeper asks.</h2></div>

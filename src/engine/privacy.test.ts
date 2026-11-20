@@ -70,6 +70,16 @@ describe('nothing raw leaves', () => {
     expect(v.maskNote('MONTHLY SERVICE FEE').text).toBe('MONTHLY SERVICE FEE');
   });
 
+  it('names go back even when the model drops the square brackets around a code', () => {
+    const v = new Vault();
+    v.registerParty('DANIEL REYES', 'PERSON');
+    v.registerParty('REYES CONSTRUCTION LLC', 'BUSINESS');
+    expect(v.restore('Could you tell me how PERSON_1 and BUSINESS_1 are connected? [PERSON_1] again.'))
+      .toBe('Could you tell me how DANIEL REYES and REYES CONSTRUCTION LLC are connected? DANIEL REYES again.');
+    // codes this vault never issued, and code-like words inside other words, stay as they are
+    expect(v.restore('PERSON_9, MY_PERSON_1X and [WORD_3]')).toBe('PERSON_9, MY_PERSON_1X and [WORD_3]');
+  });
+
   it('a payee mentioned in another row’s note is masked there too, and only as a whole word', () => {
     const v = new Vault();
     v.registerParty('ANN LEE', 'PERSON');

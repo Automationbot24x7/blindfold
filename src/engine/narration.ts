@@ -64,7 +64,8 @@ function leadingName(s: string, keywords = true, max = 6): { name: string; rest:
 /** What is left of a line once reference numbers, confirmation codes and dates are taken out. */
 function tidyNote(s: string): string {
   return clean(
-    s.replace(/\bON \d{1,2}\/\d{1,2}(\/\d{2,4})?(?!\d)/gi, ' ')
+    s.replace(/^\s*MEMO:?\s*/i, ' ')
+      .replace(/\bON \d{1,2}\/\d{1,2}(\/\d{2,4})?(?!\d)/gi, ' ')
       .replace(/\b(?:REF|CONF|CONFIRMATION|ID|TRN|TRACE|TRANSACTION|SEQ)\s*(?:NO\.?|NUMBER)?\s*#?:?\s*[A-Z0-9-]*\d[A-Z0-9-]*/gi, ' ')
       .replace(/\b[A-Z0-9]*\d[A-Z0-9]{5,}\b/gi, ' ')
       .replace(/(^|\s)[#*]+(?=\s|$)/g, ' '),

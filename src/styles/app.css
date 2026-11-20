@@ -325,3 +325,35 @@ table.map select { font: inherit; font-weight: 600; font-size: 13px; color: var(
 .kv .bad dd { background: var(--red); color: #fff; padding: 0 6px; }
 .stat.zero.bad b { background: var(--red); color: #fff; }
 .review-miss { margin: 14px 0 0; padding: 2px 0 2px 16px; border-left: 2px solid var(--ink-4); color: var(--ink-2); font-size: 14.5px; }
+
+/* Client workpaper: a plain, printable page. On screen it sits in a dialog; a second copy at the end of the page is what prints. */
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.wp-modal { width: min(940px, 100%); }
+.wp-print { display: none; }
+.wp-sheet { color: var(--ink); font-size: 14px; }
+.wp-head { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.wp-kicker { font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--red); }
+.wp-head h2 { margin: 4px 0 2px; font-size: 30px; font-weight: 740; letter-spacing: -0.02em; }
+.wp-head p { margin: 0; color: var(--ink-2); }
+.wp-meta { font-size: 12.5px; color: var(--ink-3); text-align: right; white-space: nowrap; }
+.wp-list { list-style: none; margin: 0; padding: 0; counter-reset: wp; }
+.wp-item { counter-increment: wp; position: relative; padding: 18px 0 16px 44px; border-bottom: 1px solid var(--rule); break-inside: avoid; }
+.wp-item::before { content: counter(wp, decimal-leading-zero); position: absolute; left: 0; top: 20px; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink-3); }
+.wp-kind { font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.wp-item h3 { margin: 3px 0 4px; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.wp-facts { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.wp-rows { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; margin-bottom: 8px; }
+.wp-rows td { padding: 3px 12px 3px 0; border-top: 1px solid var(--line-2); vertical-align: top; }
+.wp-rows td.amt { text-align: right; white-space: nowrap; padding-right: 0; }
+.wp-why { margin: 0 0 6px; line-height: 1.5; }
+.wp-q { margin: 0 0 10px; line-height: 1.5; padding-left: 10px; border-left: 3px solid var(--hl); }
+.wp-answer { display: grid; gap: 14px; margin-top: 6px; }
+.wp-answer span { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.wp-answer i { display: block; border-bottom: 1px solid var(--ink-4); height: 10px; }
+.wp-foot { margin-top: 16px; padding: 12px 0 0 12px; border-left: 3px solid var(--red); font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+@media print {
+  body.print-wp #root { display: none !important; }
+  body.print-wp .wp-print { display: block !important; }
+  body.print-wp .wp-print .wp-sheet { font-size: 11pt; }
+  body.print-wp { background: #fff; }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { CATEGORIES, codesFor, label } from '../engine/categories';
 import { REVIEW_INSTRUCTIONS } from '../engine/cloud';
 import { importStatement, LayoutError, suggestColumns, type ColumnMap, type ImportResult } from '../engine/csv';
@@ -36,6 +37,7 @@ export function AuditPage() {
   const [snap, setSnap] = useState<AuditSnapshot | null>(null);
   const [tab, setTab] = useState<'findings' | 'ledger' | 'receipt'>('findings');
   const [xray, setXray] = useState<Finding | null>(null);
+  const [workpaper, setWorkpaper] = useState(false);
   const [cloudOnlyOk, setCloudOnlyOk] = useState(false);
   const [askMode, setAskMode] = useState(false);
   const [error, setError] = useState('');
@@ -250,7 +252,8 @@ export function AuditPage() {
               <p className="read-note">{meta.notes?.join(' ')}{meta.skipped ? ` ${plural(meta.skipped, 'line')} without a date or an amount ${meta.skipped === 1 ? 'was' : 'were'} left out.` : ''}</p>
             ) : null}
           </div>
-          <div className="no-print">
+          <div className="no-print head-actions">
+            {snap.stage === 'done' && snap.findings.length > 0 && <button className="btn primary" onClick={() => setWorkpaper(true)}>Client workpaper</button>}
             <button className="btn" onClick={reset}>New statement</button>
           </div>
         </div>
@@ -276,6 +279,7 @@ export function AuditPage() {
         {tab === 'receipt' && <ReceiptView snap={snap} meta={meta} recorded={!!replay} proof={proof} />}
       </div>
       {xray && <XRay finding={xray} snap={snap} currency={meta.currency} onClose={() => setXray(null)} />}
+      {workpaper && <Workpaper snap={snap} meta={meta} proof={proof} recorded={!!replay} onClose={() => setWorkpaper(false)} />}
     </div>
   );
 }
@@ -485,7 +489,7 @@ function Rail({ snap, currency, recorded, proof }: { snap: AuditSnapshot; curren
       <dl className="kv">
         <div><dt><i className="m-rule" />Rules</dt><dd>{by('rule')}</dd></div>
         <div><dt><i className="m-device" />Built-in AI, {here}</dt><dd>{by('device') + by('memory')}</dd></div>
-        <div><dt><i className="m-cloud" />Blind cloud opinion</dt><dd>{by('cloud')}</dd></div>
+        <div><dt><i className="m-cloud" />Labelled by the cloud, masked</dt><dd>{by('cloud')}</dd></div>
         <div className="total"><dt>Read locally</dt><dd>{local} of {snap.txns.length}</dd></div>
       </dl>
       <h4>What left {recorded ? 'the laptop' : 'this device'}</h4>
@@ -495,7 +499,7 @@ function Rail({ snap, currency, recorded, proof }: { snap: AuditSnapshot; curren
         <div><dt>Masked lines</dt><dd>{sentLines}</dd></div>
         <div><dt>Placeholders in them</dt><dd>{tokens.all}</dd></div>
         <div><dt>Requests sent</dt><dd>{sent.length}</dd></div>
-        <div><dt>Answered by the cloud</dt><dd>{cloudCalls}</dd></div>
+        <div><dt>Reviews answered by the cloud</dt><dd>{cloudCalls}</dd></div>
         {sent.length > cloudCalls && <div><dt>Cloud too slow: drafted {recorded ? 'on the laptop' : 'here'}</dt><dd>{sent.length - cloudCalls}</dd></div>}
       </dl>
       <p className="rail-foot">
@@ -635,7 +639,7 @@ function XRay({ finding, snap, currency, onClose }: { finding: Finding; snap: Au
     <div className="modal-back" onClick={onClose}>
       <div className="modal xray-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>X-ray: {finding.title}</h3>
+          <h3>What the cloud saw: {finding.title}</h3>
           <button className="btn sm" onClick={onClose}>Close</button>
         </div>
         <div className="modal-body">
@@ -816,7 +820,8 @@ function ReceiptView({ snap, meta, recorded, proof }: { snap: AuditSnapshot; met
       {!!snap.guardSkipped && (
         <div className="notice"><div><h4>The on-device leak guard could not re-read {plural(snap.guardSkipped, 'line')}</h4><p>The built-in model did not answer. Those lines were masked by rules, and the last check before sending still ran on them.</p></div></div>
       )}
-      {snap.ledger.map((l: LedgerEntry) => (
+      {/* in the order the requests were sent (they can come back in any order) */}
+      {[...snap.ledger].sort((a, b) => a.id - b.id).map((l: LedgerEntry) => (
         <details key={l.id} className="ledger-entry">
           <summary>
             <span className="t">{l.at}</span>
@@ -839,6 +844,82 @@ function sentTokens(snap: AuditSnapshot): { all: number; text: number } {
   const lines = snap.ledger.filter(l => l.status === 'sent').flatMap(l => l.text.split('\n').filter(x => /^(- |r\d+: )/.test(x)));
   const set = new Set(lines.flatMap(x => x.match(/\[[A-Z]+_\d+\]/g) ?? []));
   return { all: set.size, text: [...set].filter(t => t.startsWith('[WORD_') || t.startsWith('[NAME_')).length };
+}
+
+/* ------------------------------------------------------------------ client workpaper */
+
+/**
+ * What a bookkeeper or treasurer hands over after the audit: each red flag with the numbers code computed,
+ * what the review made of it, the question for the client with the real names back, and room for the answer.
+ * Printed from its own copy at the end of the page, so the rest of the app never reaches the paper.
+ */
+function Workpaper({ snap, meta, proof, recorded, onClose }: { snap: AuditSnapshot; meta: Meta; proof: SelfCheck; recorded: boolean; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const flagged = snap.findings.flatMap(f => f.txnIds).filter((id, i, a) => a.indexOf(id) === i);
+  const paidOut = snap.txns.filter(t => flagged.includes(t.id) && t.direction === 'out').reduce((s, t) => s + t.amount, 0);
+  const asked = snap.findings.filter(f => f.review?.clientQuestion);
+  const where = recorded ? 'the recording laptop' : 'this computer';
+  const today = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const questions = asked.map((f, i) => `${i + 1}. ${f.review!.clientQuestion}`).join('\n');
+  const sheet = (
+    <div className="wp-sheet">
+      <header className="wp-head">
+        <div>
+          <div className="wp-kicker">Audit workpaper</div>
+          <h2>{meta.title}</h2>
+          <p>{meta.period ? `${meta.period} · ` : ''}{plural(snap.txns.length, 'transaction')} · {plural(snap.findings.length, 'red flag')} · {money(paidOut, meta.currency)} paid out in flagged rows</p>
+        </div>
+        <div className="wp-meta">Prepared {today}<br />with Blindfold{recorded ? ' (recorded run)' : ''}</div>
+      </header>
+      <ol className="wp-list">
+        {snap.findings.map(f => {
+          const rows = f.txnIds.map(id => snap.txns.find(t => t.id === id)!).filter(Boolean);
+          return (
+            <li key={f.id} className="wp-item">
+              <div className="wp-kind">{KIND[f.kind]} · {f.severity} priority{f.review ? ` · ${VERDICT[f.review.verdict]}` : ' · not reviewed'}</div>
+              <h3>{f.title}</h3>
+              <p className="wp-facts">{Object.entries(f.facts).map(([k, v]) => `${FACT_LABEL[k] ?? k} ${v}`).join(' · ')}</p>
+              <table className="wp-rows"><tbody>
+                {rows.map(t => (
+                  <tr key={t.id}><td>{t.date}</td><td>{t.narration}</td><td className="amt">{t.direction === 'out' ? '−' : '+'}{money(t.amount, meta.currency)}</td></tr>
+                ))}
+              </tbody></table>
+              {f.review && <p className="wp-why">{f.review.explanation}</p>}
+              {f.review && <p className="wp-q"><b>Question for the client:</b> {f.review.clientQuestion}</p>}
+              <div className="wp-answer"><span>Client’s answer</span><i /><i /></div>
+            </li>
+          );
+        })}
+      </ol>
+      <footer className="wp-foot">
+        <b>Privacy.</b> {plural(proof.requests, 'request')} left {where} during this audit, each with names replaced by codes. Every one was searched for the {proof.searchedFor} names, uncommon words and account-style numbers in this statement: {proof.found.length === 0 ? 'none was found' : `${plural(proof.found.length, 'match', 'matches')} found`}. Amounts, dates and invoice numbers were sent on purpose. Every number above was computed by code, not by a model. The full word-for-word receipt is in the app.
+      </footer>
+    </div>
+  );
+  const print = () => {
+    document.body.classList.add('print-wp');
+    const done = () => { document.body.classList.remove('print-wp'); removeEventListener('afterprint', done); };
+    addEventListener('afterprint', done);
+    window.print();
+  };
+  return (
+    <>
+      <div className="modal-back" onClick={onClose}>
+        <div className="modal wp-modal" onClick={e => e.stopPropagation()}>
+          <div className="modal-head">
+            <h3>Client workpaper</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn sm" onClick={() => { void navigator.clipboard?.writeText(questions).then(() => setCopied(true)); }}>{copied ? 'Questions copied' : 'Copy the questions'}</button>
+              <button className="btn sm primary" onClick={print}>Print or save as PDF</button>
+              <button className="btn sm" onClick={onClose}>Close</button>
+            </div>
+          </div>
+          <div className="modal-body">{sheet}</div>
+        </div>
+      </div>
+      {createPortal(<div className="wp-print" aria-hidden>{sheet}</div>, document.body)}
+    </>
+  );
 }
 
 function download(name: string, text: string, type: string) {

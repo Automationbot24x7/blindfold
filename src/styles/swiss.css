@@ -75,6 +75,45 @@ mark { display: inline-block; height: 20px; line-height: 20px; background: var(-
 .cmp-row mark { animation: rowIn .3s ease-out backwards; animation-delay: var(--d); }
 @keyframes rowIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes barIn { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+/* "Try to slip a name past it": the masking playground */
+.sw-leak { padding: 72px 0 8px; }
+.leak-presets { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 14px; }
+.leak-presets button { border: 0; border-bottom: 2px solid transparent; background: none; padding: 3px 0; font: inherit; font-size: 14px; font-weight: 640; color: var(--ink-3); cursor: pointer; }
+.leak-presets button.on, .leak-presets button:hover { color: var(--ink); border-bottom-color: var(--ink); }
+.leak-input { display: grid; gap: 6px; }
+.leak-input span { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.leak-input input { font-family: var(--mono); font-size: 16px; padding: 12px 14px; border: 2px solid var(--ink); background: #fff; color: var(--ink); border-radius: 0; outline: none; width: 100%; box-sizing: border-box; }
+.leak-input input:focus { box-shadow: 0 0 0 3px var(--hl); }
+.leak-out { display: grid; grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); margin-top: 18px; border-top: 2px solid var(--ink); }
+.leak-red { position: relative; }
+.leak-red::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--red); }
+.leak-col { padding: 12px 0 16px; min-width: 0; }
+.leak-h { font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+.leak-h.cloud { color: var(--red); }
+.leak-line { font-family: var(--mono); font-size: 14.5px; line-height: 1.9; word-break: break-word; }
+.leak-line .bar { vertical-align: -4px; }
+.leak-verdict { display: block; padding: 12px 0 0 16px; border-left: 4px solid var(--ink); font-size: 15px; color: var(--ink-2); }
+.leak-verdict b { color: var(--ink); }
+.leak-verdict.stop { border-left-color: var(--red); }
+.leak-verdict.stop b { color: var(--red); }
+.leak-skip { display: flex; margin-top: 8px; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-3); cursor: pointer; }
+.leak-skip input { accent-color: var(--red); width: 16px; height: 16px; }
+@media (max-width: 760px) {
+  .leak-out { grid-template-columns: minmax(0, 1fr); }
+  .leak-red { height: 2px; background: var(--red); }
+  .leak-red::before { display: none; }
+}
+
+/* the thread between two linked codes: drawn in after the codes appear, pinned with brass at both ends */
+.cmp-list { position: relative; }
+.cmp-thread { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.cmp-thread path { fill: none; stroke: var(--red); stroke-width: 2.5; stroke-dasharray: 1; stroke-dashoffset: 1; animation: threadIn .7s cubic-bezier(.4, 0, .2, 1) .95s forwards; }
+.cmp-thread circle { fill: #b08d57; stroke: #6f5530; stroke-width: 1; opacity: 0; animation: pinIn .2s ease-out forwards; }
+.cmp-thread circle:first-of-type { animation-delay: .85s; }
+.cmp-thread circle:last-of-type { animation-delay: 1.6s; }
+@keyframes threadIn { to { stroke-dashoffset: 0; } }
+@keyframes pinIn { from { opacity: 0; transform: scale(1.8); } to { opacity: 1; transform: none; } }
+.cmp-thread circle { transform-box: fill-box; transform-origin: center; }
 .cmp-foot { margin-top: 12px; font-size: 12.5px; line-height: 1.55; color: #55524d; }
 .cmp-foot .mono { font-family: var(--mono); font-size: 12px; padding-top: 2px; }
 
@@ -93,6 +132,9 @@ mark { display: inline-block; height: 20px; line-height: 20px; background: var(-
 .spine-ln::before { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: var(--red); }
 .sw .spine-ln .cross { position: relative; display: block; max-width: none; border: 0; border-radius: 0; background: var(--paper); color: var(--red); font-family: var(--font); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; padding: 3px 0; text-align: center; line-height: 1.4; }
 .sw .step { background: none; border: 0; border-radius: 0; padding: 24px 0; }
+.sw .step:has(> .step-art) { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 22px; align-items: start; }
+.step-art { width: 132px; height: 132px; object-fit: cover; display: block; border: 1px solid var(--rule); }
+.snip .fact { display: inline-block; margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--red); color: var(--ink); }
 .sw .step .n { font-size: 13px; font-weight: 600; }
 .sw .step h3 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 8px; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
 .sw .step p { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--ink-2); max-width: 560px; }
@@ -130,6 +172,8 @@ table.hood code { font-family: var(--mono); font-size: 12px; background: #efece6
   .bw-bg { animation: none; transform: none; }
   .bw-text span { animation: none; opacity: 1; color: var(--paper); }
   .cmp-pair, .cmp-row mark, .sw .bar { animation: none; }
+  .cmp-thread path { animation: none; stroke-dashoffset: 0; }
+  .cmp-thread circle { animation: none; opacity: 1; }
   .cmp-win, .cmp-list.sliding { transition: none; }
 }
 
@@ -168,6 +212,7 @@ table.hood code { font-family: var(--mono); font-size: 12px; background: #efece6
   .cmp-head > div:first-child { border-bottom: 0; padding-bottom: 4px; }
   .cmp-head > div:last-child { padding: 2px 0 10px 10px; border-left: 2px solid var(--red); border-bottom: 2px solid var(--ink); }
   .cmp-win::before { display: none; }
+  .cmp-thread { display: none; }
   .cmp-pair { grid-template-columns: minmax(0, 1fr); padding: 10px 0 12px; border-bottom: 1px solid var(--rule); }
   .cmp-gap { display: none; }
   .cmp-row { padding: 0; border-bottom: 0; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; font-size: 14px; }
@@ -189,6 +234,8 @@ table.hood code { font-family: var(--mono); font-size: 12px; background: #efece6
   .spine-ln::before { top: 50%; bottom: auto; left: 0; right: 0; width: auto; height: 2px; margin: -1px 0 0; }
   .sw .spine-ln .cross { padding: 6px 10px 6px 0; text-align: left; }
   .sw .step { padding: 20px 0 22px; }
+  .sw .step:has(> .step-art) { grid-template-columns: 76px minmax(0, 1fr); gap: 14px; }
+  .step-art { width: 76px; height: 76px; }
   .faq-list { grid-template-columns: minmax(0, 1fr); }
   .faq-list li { grid-template-columns: 36px minmax(0, 1fr); }
   table.hood thead { display: none; }
