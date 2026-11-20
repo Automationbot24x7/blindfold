@@ -6,7 +6,7 @@ Blindfold is a second pair of eyes for bank statements, built for one-person boo
 
 **Live app:** https://blindfold-audit.web.app &nbsp;·&nbsp; **Demo video:** https://youtu.be/UWM-k9jvhVc &nbsp;·&nbsp; **License:** Apache-2.0
 
-![The landing page: each statement line on your computer (left) and the copy the cloud receives (right), with the red privacy boundary between them](docs/landing.png)
+![Blindfold: the cloud finds the red flags, it never sees a name. A bank statement with names covered by black tape and red thread linking matching lines](docs/banner.jpg)
 
 ## Try it
 
@@ -48,6 +48,10 @@ A real example from the recorded run of the café sample:
 | The cloud's question | `Did [BUSINESS_6] confirm this second payment of $1,845.00 was a mistake and agree to refund it?` |
 | For the client | `Did HARBORVIEW BAKERY SUPPLY confirm this second payment of $1,845.00 was a mistake and agree to refund it?` |
 
+This is what sets Blindfold apart from tools that redact a document and ask one question about it: the same party keeps the same code across the whole statement, so the patterns an auditor looks for survive the masking.
+
+![Every name becomes a code, the pattern stays visible: three findings from the café sample, raw on the left, as the cloud reads them on the right](docs/codes-keep-the-pattern.png)
+
 Rows that need no second look are never sent at all. The X-ray view shows all four steps for any finding, with your computer on the left of the red line and the cloud on the right:
 
 ![The X-ray of a finding: what stayed on the computer, exactly what was sent, the answer as it came back, and the answer with names put back](docs/xray.png)
@@ -61,7 +65,7 @@ Layered so that a single miss does not leak a name:
 3. **Default-deny notes.** In free-text notes, only everyday words, dates and document numbers survive. Anything else becomes a placeholder: a first name or a place (`[WORD_n]`), and any number that is not plainly a count, a year or an invoice number, so the last four digits of a card or an account never leave.
 4. **Pattern masks** for phone numbers, emails, card, account and ID numbers.
 5. **An on-device leak guard** re-reads every outgoing line and masks anything that still looks like a name. It catches what rules cannot know: that "June" in a note is a child and not a month.
-6. **A last check before sending, by exact match.** The app keeps a list of every word and number in the raw statement that is not an everyday word. Each request is searched for all of them. Anything found is masked on the spot; if something is still readable after that, the request is stopped and never sent. This check knows nothing about how the masking works, so a bug in the masking cannot hide from it ([`src/engine/proof.ts`](src/engine/proof.ts)).
+6. **A last check before sending, by exact match.** The app keeps a list of every name, uncommon word and account-style number in the raw statement (every word that is not an everyday word, and every number that is not a count, a year or an invoice number). Each request is searched for all of them. Anything found is masked on the spot; if something is still readable after that, the request is stopped and never sent. This check knows nothing about how the masking works, so a bug in the masking cannot hide from it ([`src/engine/proof.ts`](src/engine/proof.ts)).
 7. **A receipt that is measured, not asserted.** The receipt's first number ("raw names, IDs or account numbers sent") is that same search, run again in the browser whenever the receipt is drawn, including for the recorded runs. It shows how many words and numbers it looked for and how many it found. The receipt also lists every request word for word and can be printed or downloaded as JSON.
 
 ## Results on the sample statements
@@ -74,7 +78,7 @@ The three samples are made-up organisations with problems planted for the audit 
 | Willow Creek Homeowners Association | 45 | 29 | 16 | 4 | 0 | 45 / 45 |
 | Maple Street Animal Rescue | 34 | 25 | 9 | 5 | 0 | 31 / 34 |
 
-- **Leak check:** every request was searched for every word and number of its statement that is not an everyday word (74, 44 and 38 of them). None appeared. The app repeats this search in your browser each time a recorded run is replayed, and `npm test` repeats it too.
+- **Leak check:** every request was searched for every name, uncommon word and account-style number of its statement (74, 44 and 38 of them). None appeared. Amounts, dates and invoice numbers are sent on purpose: they are the pattern the cloud judges. The app repeats this search in your browser each time a recorded run is replayed, and `npm test` repeats it too.
 - **Reviews:** 13 of the 14 reviews were answered by the cloud; one fell back to an on-device draft when the cloud took longer than the deadline.
 - **Errors:** three cheques to a vet clinic were labelled as purchases rather than services, an office-supply shop as bank charges, and a jewellery purchase as an own-account transfer rather than personal spending. On-device labels can vary a little from run to run.
 
@@ -112,7 +116,7 @@ The samples above were written for the app, so they say nothing about whether a 
 
 An ambiguous date such as 03/04/2026 is settled by the rest of the column (a 13 can only be a day) and otherwise by the currency. Wording used by large US banks is parsed for the payee (person-to-person transfers, card purchases with a store number and city, ACH lines with an originator, wires, transfers to the client's own savings account). Anything the parser does not recognise is still safe: the whole payee text becomes one code.
 
-The same privacy test runs over all of these files as well as the samples: every row is masked as if it were about to be sent, and the result is searched for every word and number of the statement ([`src/engine/privacy.test.ts`](src/engine/privacy.test.ts)).
+The same privacy test runs over all of these files as well as the samples: every row is masked as if it were about to be sent, and the result is searched for every name, uncommon word and account-style number of the statement ([`src/engine/privacy.test.ts`](src/engine/privacy.test.ts)).
 
 ## Firebase AI Logic in the code
 
@@ -150,7 +154,7 @@ const where = res.response.inferenceSource; // 'on_device', shown in the app and
 | [`src/engine/ondevice.ts`](src/engine/ondevice.ts) | `categoriseOnDevice` (payee labelling in batches, with a keyed enum constraint) and `leakGuard` (re-reads outgoing text). |
 | [`src/engine/cloud.ts`](src/engine/cloud.ts) | Builds the masked requests, `cloudFirst` (cloud with deadline, on-device fallback, records `inferenceSource`), `reviewFinding` and `runSecondOpinion`. |
 | [`src/engine/pipeline.ts`](src/engine/pipeline.ts) | Runs one audit end to end, applies the last check before anything is sent, and records every outgoing request word for word in the privacy ledger. Carries on when a model call fails. |
-| [`src/engine/proof.ts`](src/engine/proof.ts) | Lists every word and number of the raw statement that must stay on the computer, and searches outgoing requests for them: before sending, and again for the receipt. |
+| [`src/engine/proof.ts`](src/engine/proof.ts) | Lists every name, uncommon word and account-style number of the raw statement that must stay on the computer, and searches outgoing requests for them: before sending, and again for the receipt. |
 | [`src/engine/vault.ts`](src/engine/vault.ts) | The code vault: payees to codes, default-deny masking of notes, and the codes back to names. |
 | [`src/lib/remoteConfig.ts`](src/lib/remoteConfig.ts) | Limits and model names from Remote Config, with built-in defaults. |
 

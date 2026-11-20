@@ -491,7 +491,7 @@ function Rail({ snap, currency, recorded, proof }: { snap: AuditSnapshot; curren
       <h4>What left {recorded ? 'the laptop' : 'this device'}</h4>
       <dl className="kv">
         {/* measured: every request is searched for every name, word and number of the statement (engine/proof.ts) */}
-        <div className={proof.found.length ? 'bad' : 'good'} title={`Searched for ${proof.searchedFor} names, words and numbers from the statement`}><dt>Raw names, IDs, account numbers</dt><dd>{proof.found.length}</dd></div>
+        <div className={proof.found.length ? 'bad' : 'good'} title={`Searched for ${proof.searchedFor} names, uncommon words and account-style numbers from the statement`}><dt>Raw names, IDs, account numbers</dt><dd>{proof.found.length}</dd></div>
         <div><dt>Masked lines</dt><dd>{sentLines}</dd></div>
         <div><dt>Placeholders in them</dt><dd>{tokens.all}</dd></div>
         <div><dt>Requests sent</dt><dd>{sent.length}</dd></div>
@@ -793,8 +793,9 @@ function ReceiptView({ snap, meta, recorded, proof }: { snap: AuditSnapshot; met
       <p className="proof-line">
         <b>Checked, not assumed.</b>{' '}
         {proof.requests === 0
-          ? `Once a request leaves ${where}, it is searched here for every name, word and number in the statement that is not an everyday word.`
-          : <>Every request that left {where} was searched just now for every name, word and number in this statement that is not an everyday word: <b>{proof.searchedFor}</b> in all. {proof.found.length === 0 ? `None of them is in any of the ${plural(proof.requests, 'request')}.` : `${plural(proof.found.length, 'match', 'matches')} found, listed below.`}</>}
+          ? `Once a request leaves ${where}, it is searched here for every name, uncommon word and account-style number in the statement.`
+          : <>Every request that left {where} was searched just now for every name, uncommon word and account-style number in this statement: <b>{proof.searchedFor}</b> in all. {proof.found.length === 0 ? `None of them is in any of the ${plural(proof.requests, 'request')}.` : `${plural(proof.found.length, 'match', 'matches')} found, listed below.`}</>}
+        {' '}Amounts, dates and invoice numbers are sent on purpose: they are the pattern.
       </p>
       {proof.found.length > 0 && (
         <div className="notice warn"><div><h4>Something from the statement was sent unmasked</h4><p>{proof.found.map(f => `request ${f.request}: “${f.value}”`).join(', ')}</p></div></div>
