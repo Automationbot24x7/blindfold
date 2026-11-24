@@ -33,7 +33,7 @@ async function audit(csv: string, o: { device: boolean; maxLabelRequests?: numbe
   const a = new Audit(txns, {
     currency, context: 'a small independent café', config: { ...DEFAULT_CONFIG[currency], approvalLimit: 0 },
     cloudModel: 'test-model', deviceBatchSize: 12, deviceAvailable: o.device, receiptHead: 'SAL',
-    maxLabelRequests: o.maxLabelRequests, maxReviews: o.maxReviews, onUpdate: () => {},
+    maxLabelRequests: o.maxLabelRequests, maxReviews: o.maxReviews, retryWaitsMs: [0, 0], onUpdate: () => {},
   });
   await a.run();
   return a.snapshot;
@@ -106,6 +106,29 @@ describe('an audit without the on-device model (masked cloud-only mode)', () => 
     expect(s.ledger.every(l => l.status === 'failed' && /quota is used up/.test(l.error ?? ''))).toBe(true);
     // The pattern itself comes from code, so it is still found; only its review is missing.
     expect(s.findings.map(f => [f.kind, f.reviewStatus])).toEqual([['DUPLICATE_PAYMENT', 'failed']]);
+    // a review that keeps failing is asked twice more, and each attempt is on the receipt
+    expect(s.ledger.filter(l => l.purpose.startsWith('Blind review'))).toHaveLength(3);
+  });
+
+  it('a busy cloud model is asked again, and the review that comes back counts', async () => {
+    let busy = 1;
+    fake.cloud = text => { if (!text.startsWith('Label each') && busy-- > 0) throw new Error('[503] The model is overloaded'); return goodCloud(text); };
+    const s = await audit(forty, { device: false });
+    const reviews = s.ledger.filter(l => l.purpose.startsWith('Blind review'));
+    expect(reviews.map(l => l.status)).toEqual(['failed', 'sent']);
+    expect(reviews[0].text).toBe(reviews[1].text);
+    expect(s.findings.map(f => [f.kind, f.reviewStatus])).toEqual([['DUPLICATE_PAYMENT', 'done']]);
+    expect(check(s).found).toEqual([]);
+  });
+
+  it('a review that ran past the deadline with no device to draft on is asked once more', async () => {
+    const slow = Object.assign(new Error('request timeout'), { name: 'AbortError' });
+    fake.cloud = text => { if (!text.startsWith('Label each')) throw slow; return goodCloud(text); };
+    fake.device = text => { if (text.startsWith('You label') || text.startsWith('This text is about')) return goodDevice(text); throw new Error('no model'); };
+    const s = await audit(forty, { device: false });
+    const reviews = s.ledger.filter(l => l.purpose.startsWith('Blind review'));
+    expect(reviews.map(l => l.status)).toEqual(['failed', 'failed']);
+    expect(reviews[1].error).toMatch(/took more than/);
   });
 });
 

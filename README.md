@@ -162,7 +162,7 @@ const where = res.response.inferenceSource; // 'on_device', shown in the app and
 
 Other folders: `src/engine` also holds the CSV import ([`csv.ts`](src/engine/csv.ts)), narration parsing, rules, detectors and the everyday-word list; `src/ui` is the React interface; `tools/` has the sample and held-out generators, the recorded-run checker and the screenshot script; `eval/holdout` holds the unseen test statements and their results, and `eval/formats` the bank export layouts; `lab.html` with `src/lab/` is a small internal page used early on to time on-device labelling and is not part of the app.
 
-`npm test` runs 45 checks without a browser or a network: the parser and detectors, the bank export layouts, the privacy tests (nothing from any statement appears in its masked lines; the recorded runs pass the receipt's search), and whole audits with stand-in models in both modes, including a model that returns a broken answer, a leak guard that cannot run and a cloud that is out of quota ([`src/engine/pipeline.test.ts`](src/engine/pipeline.test.ts)).
+`npm test` runs 49 checks without a browser or a network: the parser and detectors, the bank export layouts, the privacy tests (nothing from any statement appears in its masked lines; the recorded runs pass the receipt's search), and whole audits with stand-in models in both modes, including a model that returns a broken answer, a leak guard that cannot run, and a cloud that is out of quota, busy or too slow, which is asked again before a review is shown as failed ([`src/engine/pipeline.test.ts`](src/engine/pipeline.test.ts)).
 
 ## Run it yourself
 

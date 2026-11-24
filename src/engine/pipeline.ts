@@ -50,6 +50,7 @@ export interface AuditOptions {
   receiptHead: 'SAL' | 'DUE'; // sales for a business, dues for an association or nonprofit
   maxLabelRequests?: number; // cloud requests one audit may spend on labelling payees
   maxReviews?: number; // findings reviewed automatically; the rest wait for a click
+  retryWaitsMs?: number[]; // waits before asking again when the cloud model is busy (default 3 s, then 8 s)
   onUpdate: (s: AuditSnapshot) => void;
 }
 
@@ -218,18 +219,32 @@ export class Audit {
   private async reviewOne(f: Finding): Promise<void> {
     const rows = f.txnIds.map(id => this.s.txns.find(t => t.id === id)!);
     const payload = findingPayload(f, rows, this.vault, this.o.currency, this.o.context);
-    const status = await this.send(payload, async p => {
-      f.sentText = p.text;
-      try {
-        f.review = await reviewFinding(p, this.o.cloudModel, this.vault);
-        f.reviewError = undefined;
-      } catch (e) {
-        f.reviewError = (e as Error).message;
-        throw e;
+    // A busy free-tier model usually answers a few seconds later, so a review that failed because the model was
+    // busy, rate-limited or stuck is asked again before it is shown as failed. Every attempt is on the receipt.
+    const waits = this.o.retryWaitsMs ?? [3000, 8000];
+    for (let attempt = 0; ; attempt++) {
+      const status = await this.send(payload, async p => {
+        f.sentText = p.text;
+        try {
+          f.review = await reviewFinding(p, this.o.cloudModel, this.vault);
+          f.reviewError = undefined;
+        } catch (e) {
+          f.reviewError = (e as Error).message;
+          throw e;
+        }
+        return { source: f.review.source, ms: f.review.ms, model: f.review.model };
+      });
+      // a busy or rate-limited model is asked twice more; a request that ran past the deadline, once more
+      const err = f.reviewError ?? '';
+      const again = /model is busy|quota is used up/.test(err) || (attempt === 0 && /took more than/.test(err));
+      if (status === 'failed' && attempt < waits.length && again) {
+        this.emit({ message: `The cloud is busy; asking again in ${Math.round(waits[attempt] / 1000)} s: ${f.title}` });
+        await new Promise(r => setTimeout(r, waits[attempt]));
+        continue;
       }
-      return { source: f.review.source, ms: f.review.ms, model: f.review.model };
-    });
-    f.reviewStatus = status === 'sent' ? 'done' : status;
+      f.reviewStatus = status === 'sent' ? 'done' : status;
+      break;
+    }
     this.emit({ findings: [...this.s.findings] });
   }
 
